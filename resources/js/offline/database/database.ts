@@ -5,6 +5,7 @@ import type {
     SqlParameter,
     SqlStatement,
 } from '@/offline/database/messages';
+import sqliteWorkerUrl from '@/offline/database/sqlite.worker?worker&url';
 
 const activeUserStorageKey = 'offline-first-tasks.active-user';
 
@@ -30,6 +31,35 @@ type PendingRequest = {
     resolve(value: unknown): void;
     reject(reason: Error): void;
 };
+
+export function createDatabaseWorker(
+    workerUrl: string,
+    pageOrigin: string,
+): Worker {
+    const resolvedWorkerUrl = new URL(workerUrl, import.meta.url);
+
+    if (resolvedWorkerUrl.origin === pageOrigin) {
+        return new Worker(resolvedWorkerUrl, {
+            type: 'module',
+            name: 'offline-first-sqlite',
+        });
+    }
+
+    const bootstrapUrl = URL.createObjectURL(
+        new Blob([`import ${JSON.stringify(resolvedWorkerUrl.href)};`], {
+            type: 'text/javascript',
+        }),
+    );
+
+    try {
+        return new Worker(bootstrapUrl, {
+            type: 'module',
+            name: 'offline-first-sqlite',
+        });
+    } finally {
+        URL.revokeObjectURL(bootstrapUrl);
+    }
+}
 
 class WorkerDatabase implements LocalDatabase {
     private readonly pendingRequests = new Map<string, PendingRequest>();
@@ -255,12 +285,9 @@ export function initializeDatabase(userScope: string): Promise<LocalDatabase> {
 
         releaseDatabaseLock = releaseLock;
 
-        const worker = new Worker(
-            new URL('./sqlite.worker.ts', import.meta.url),
-            {
-                type: 'module',
-                name: 'offline-first-sqlite',
-            },
+        const worker = createDatabaseWorker(
+            sqliteWorkerUrl,
+            window.location.origin,
         );
         activeWorker = worker;
         const persistentStorageGranted = await requestPersistentStorage();
