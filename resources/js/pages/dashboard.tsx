@@ -1,9 +1,19 @@
 import { Head, usePage } from '@inertiajs/react';
+import { useEffect } from 'react';
 import { TaskWorkspace } from '@/components/task-workspace';
+import { rememberOfflineAppState } from '@/offline/app-state';
 import { dashboard } from '@/routes';
 
 export default function Dashboard() {
-    const { auth } = usePage().props;
+    const { auth, name, sidebarOpen } = usePage().props;
+
+    useEffect(() => {
+        rememberOfflineAppState({
+            name,
+            user: auth.user,
+            sidebarOpen,
+        });
+    }, [auth.user, name, sidebarOpen]);
 
     return (
         <>

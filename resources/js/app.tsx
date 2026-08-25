@@ -1,4 +1,5 @@
 import { createInertiaApp } from '@inertiajs/react';
+import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
 import { PwaUpdatePrompt } from '@/components/pwa-update-prompt';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -28,6 +29,7 @@ createInertiaApp({
         return (
             <TooltipProvider delayDuration={0}>
                 {app}
+                <ConnectionStatusIndicator />
                 <PwaUpdatePrompt />
                 <Toaster />
             </TooltipProvider>

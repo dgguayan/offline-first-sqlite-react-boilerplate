@@ -327,12 +327,14 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                             </p>
                         )}
 
-                        {syncState.lastError && !error && (
-                            <p className="text-sm text-amber-700 dark:text-amber-300">
-                                {syncState.lastError} Local edits remain safe
-                                and will retry automatically.
-                            </p>
-                        )}
+                        {syncState.lastError &&
+                            syncState.phase !== 'offline' &&
+                            !error && (
+                                <p className="text-sm text-amber-700 dark:text-amber-300">
+                                    {syncState.lastError} Local edits remain
+                                    safe and will retry automatically.
+                                </p>
+                            )}
 
                         <div className="space-y-2">
                             {tasks.length === 0 && (
@@ -537,7 +539,9 @@ function syncStatusLabel(state: SyncState): string {
     }
 
     if (state.phase === 'offline') {
-        return `Server unreachable · ${state.pendingCount} queued`;
+        return state.pendingCount > 0
+            ? `${state.pendingCount} queued`
+            : 'Synced';
     }
 
     if (state.phase === 'error') {
@@ -553,7 +557,7 @@ function syncStatusLabel(state: SyncState): string {
 
 function syncStatusClass(phase: SyncState['phase']): string {
     const color =
-        phase === 'idle'
+        phase === 'idle' || phase === 'offline'
             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
             : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
 

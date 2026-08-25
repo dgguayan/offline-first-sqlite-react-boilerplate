@@ -1,7 +1,28 @@
+import type { Page } from '@inertiajs/core';
+import { App, Head } from '@inertiajs/react';
+import type { ResolvedComponent } from '@inertiajs/react';
+import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
+import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
 import { PwaUpdatePrompt } from '@/components/pwa-update-prompt';
 import { TaskWorkspace } from '@/components/task-workspace';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { initializeTheme } from '@/hooks/use-appearance';
+import AppLayout from '@/layouts/app-layout';
+import AuthLayout from '@/layouts/auth-layout';
+import SettingsLayout from '@/layouts/settings/layout';
+import { getOfflineAppState } from '@/offline/app-state';
 import { getActiveOfflineUser } from '@/offline/database/database';
+import { dashboard } from '@/routes';
+import type { User } from '@/types';
 import '../css/app.css';
 
 const rootElement = document.getElementById('offline-app');
@@ -11,27 +32,133 @@ if (!rootElement) {
 }
 
 const userScope = getActiveOfflineUser();
+const rememberedState = getOfflineAppState(userScope);
+const appName =
+    rememberedState?.name ?? import.meta.env.VITE_APP_NAME ?? 'Laravel';
+const user = rememberedState?.user ?? fallbackUser(userScope);
+const pages = import.meta.glob<{ default: ResolvedComponent }>(
+    './pages/**/*.tsx',
+);
+
+const initialPage: Page<{
+    name: string;
+    auth: { user: User };
+    sidebarOpen: boolean;
+}> = {
+    component: 'dashboard',
+    props: {
+        name: appName,
+        auth: { user },
+        sidebarOpen: rememberedSidebarState(
+            rememberedState?.sidebarOpen ?? true,
+        ),
+        errors: {},
+    },
+    url: `${window.location.pathname}${window.location.search}`,
+    version: null,
+    rescuedProps: [],
+    flash: {},
+    rememberedState: {},
+};
+
+function OfflineDashboard() {
+    return (
+        <>
+            <Head title="Dashboard" />
+            <div className="flex h-full flex-1 flex-col overflow-x-auto rounded-xl p-4">
+                {userScope ? (
+                    <TaskWorkspace userScope={userScope} />
+                ) : (
+                    <Card className="mx-auto w-full max-w-3xl">
+                        <CardHeader>
+                            <CardTitle>Offline-first tasks</CardTitle>
+                            <CardDescription>
+                                Local task data becomes available after the
+                                first authenticated dashboard visit.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">
+                                Sign in while online and open the dashboard once
+                                to activate this browser’s offline workspace.
+                            </p>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        </>
+    );
+}
+
+OfflineDashboard.layout = {
+    breadcrumbs: [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+        },
+    ],
+};
+
+async function resolveComponent(name: string): Promise<ResolvedComponent> {
+    const page = await resolvePageComponent<{ default: ResolvedComponent }>(
+        `./pages/${name}.tsx`,
+        pages,
+    );
+
+    return page.default;
+}
+
+initializeTheme();
 
 createRoot(rootElement).render(
-    <main className="min-h-screen bg-muted/30 p-4 sm:p-8">
-        <div className="mx-auto mb-5 max-w-3xl">
-            <p className="text-sm font-medium">Offline workspace</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-                Laravel is unreachable. This static shell is using only local
-                browser data.
-            </p>
-        </div>
-        {userScope ? (
-            <TaskWorkspace userScope={userScope} />
-        ) : (
-            <div className="mx-auto max-w-3xl rounded-xl border bg-background p-6 shadow-sm">
-                <h1 className="font-semibold">No offline user is active</h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    Sign in while online and open the dashboard once before
-                    using the offline workspace.
-                </p>
-            </div>
-        )}
+    <TooltipProvider delayDuration={0}>
+        <App
+            initialPage={initialPage}
+            initialComponent={OfflineDashboard as unknown as ResolvedComponent}
+            resolveComponent={resolveComponent}
+            titleCallback={(title) =>
+                title ? `${title} - ${appName}` : appName
+            }
+            defaultLayout={(name) => {
+                switch (true) {
+                    case name === 'welcome':
+                        return null;
+                    case name.startsWith('auth/'):
+                        return AuthLayout;
+                    case name.startsWith('settings/'):
+                        return [AppLayout, SettingsLayout];
+                    default:
+                        return AppLayout;
+                }
+            }}
+        />
+        <ConnectionStatusIndicator />
         <PwaUpdatePrompt />
-    </main>,
+        <Toaster />
+    </TooltipProvider>,
 );
+
+function fallbackUser(userScope: string | null): User {
+    const id = Number(userScope);
+
+    return {
+        id: Number.isSafeInteger(id) ? id : 0,
+        name: 'Offline user',
+        email: '',
+        email_verified_at: null,
+        created_at: '',
+        updated_at: '',
+    };
+}
+
+function rememberedSidebarState(fallback: boolean): boolean {
+    const cookie = document.cookie
+        .split('; ')
+        .find((candidate) => candidate.startsWith('sidebar_state='));
+
+    if (!cookie) {
+        return fallback;
+    }
+
+    return cookie.slice('sidebar_state='.length) !== 'false';
+}

@@ -1,3 +1,4 @@
+import { reportServerReachability } from '@/offline/connection-status';
 import type { SqliteSyncRepository } from '@/offline/repositories/sync-repository';
 import { SyncApiClient, SyncApiError } from '@/offline/sync/sync-api';
 import type { OutboxMutation, SyncSummary } from '@/offline/types/sync';
@@ -98,6 +99,7 @@ export class SyncEngine {
 
         try {
             await this.api.health();
+            reportServerReachability(true);
             this.setState({ serverReachable: true });
             await this.pushPending();
             await this.pullChanges();
@@ -111,6 +113,7 @@ export class SyncEngine {
         } catch (error) {
             await this.refreshSummary();
             const syncError = normalizeSyncError(error);
+            reportServerReachability(syncError.status !== null);
             this.setState({
                 phase: syncError.isAuthenticationError()
                     ? 'auth-required'
