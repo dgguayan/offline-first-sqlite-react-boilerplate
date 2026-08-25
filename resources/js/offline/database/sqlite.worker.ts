@@ -130,13 +130,24 @@ async function handleRequest(request: DatabaseWorkerRequest): Promise<unknown> {
                 returnValue: 'resultRows',
             });
         case 'transaction':
-            requireDatabase().transaction('IMMEDIATE', (transaction) => {
+            return requireDatabase().transaction('IMMEDIATE', (transaction) => {
                 for (const statement of request.statements) {
                     executeStatement(transaction, statement);
                 }
-            });
 
-            return undefined;
+                if (!request.resultStatement) {
+                    return undefined;
+                }
+
+                return transaction.exec({
+                    sql: request.resultStatement.sql,
+                    bind: request.resultStatement.parameters
+                        ? Array.from(request.resultStatement.parameters)
+                        : undefined,
+                    rowMode: 'object',
+                    returnValue: 'resultRows',
+                });
+            });
         case 'close':
             database?.close();
             database = null;

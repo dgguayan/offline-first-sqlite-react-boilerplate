@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,13 @@ import {
     initializeDatabase,
     rememberActiveOfflineUser,
 } from '@/offline/database/database';
+import { SqliteSyncRepository } from '@/offline/repositories/sync-repository';
 import { SqliteTaskRepository } from '@/offline/repositories/task-repository';
 import type { TaskRepository } from '@/offline/repositories/task-repository';
+import { SyncEngine } from '@/offline/sync/sync-engine';
+import type { SyncState } from '@/offline/sync/sync-engine';
+import { useSyncState } from '@/offline/sync/use-sync-state';
+import type { SyncConflict } from '@/offline/types/sync';
 import type { Task } from '@/offline/types/task';
 
 type Props = {
@@ -29,6 +34,8 @@ type WorkspaceState =
     | {
           status: 'ready';
           repository: TaskRepository;
+          syncRepository: SqliteSyncRepository;
+          syncEngine: SyncEngine;
           sqliteVersion: string;
           persistentStorageGranted: boolean;
       }
@@ -39,17 +46,19 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         status: 'loading',
     });
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
     const [title, setTitle] = useState('');
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const [networkAvailable, setNetworkAvailable] = useState(
-        typeof navigator === 'undefined' ? true : navigator.onLine,
-    );
+    const syncEngine =
+        workspace.status === 'ready' ? workspace.syncEngine : null;
+    const syncState = useSyncState(syncEngine);
 
     useEffect(() => {
         let cancelled = false;
         let unsubscribe: () => void = () => undefined;
+        let engine: SyncEngine | null = null;
 
         if (rememberUserScope) {
             rememberActiveOfflineUser(userScope);
@@ -58,6 +67,10 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         void initializeDatabase(userScope)
             .then(async (database) => {
                 const repository = new SqliteTaskRepository(database);
+                const syncRepository = new SqliteSyncRepository(database, () =>
+                    repository.notifyExternalChange(),
+                );
+                engine = new SyncEngine(syncRepository);
 
                 const reloadTasks = async () => {
                     const localTasks = await repository.all();
@@ -70,6 +83,8 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                 await reloadTasks();
 
                 if (cancelled) {
+                    engine.stop();
+
                     return;
                 }
 
@@ -82,8 +97,15 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                 setWorkspace({
                     status: 'ready',
                     repository,
+                    syncRepository,
+                    syncEngine: engine,
                     sqliteVersion: info.sqliteVersion,
                     persistentStorageGranted: info.persistentStorageGranted,
+                });
+                void engine.start().catch((syncError: unknown) => {
+                    if (!cancelled) {
+                        setError(errorMessage(syncError));
+                    }
                 });
             })
             .catch((databaseError: unknown) => {
@@ -98,25 +120,39 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         return () => {
             cancelled = true;
             unsubscribe();
+            engine?.stop();
         };
     }, [rememberUserScope, userScope]);
 
     useEffect(() => {
-        const updateNetworkAvailability = () => {
-            setNetworkAvailable(navigator.onLine);
-        };
+        if (workspace.status !== 'ready') {
+            return;
+        }
 
-        window.addEventListener('online', updateNetworkAvailability);
-        window.addEventListener('offline', updateNetworkAvailability);
-
-        return () => {
-            window.removeEventListener('online', updateNetworkAvailability);
-            window.removeEventListener('offline', updateNetworkAvailability);
-        };
-    }, []);
+        void workspace.syncRepository
+            .conflicts()
+            .then(setConflicts)
+            .catch((conflictError: unknown) => {
+                setError(errorMessage(conflictError));
+            });
+    }, [syncState.conflictCount, syncState.lastSyncedAt, workspace]);
 
     const repository =
         workspace.status === 'ready' ? workspace.repository : null;
+
+    const runMutation = async (mutation: () => Promise<void>) => {
+        setSaving(true);
+        setError(null);
+
+        try {
+            await mutation();
+            await syncEngine?.localDataChanged();
+        } catch (mutationError) {
+            setError(errorMessage(mutationError));
+        } finally {
+            setSaving(false);
+        }
+    };
 
     const createTask = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -146,35 +182,39 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         });
     };
 
-    const runMutation = async (mutation: () => Promise<void>) => {
-        setSaving(true);
-        setError(null);
-
-        try {
-            await mutation();
-        } catch (mutationError) {
-            setError(errorMessage(mutationError));
-        } finally {
-            setSaving(false);
-        }
-    };
-
     const updateCompleted = (task: Task, completed: boolean): void => {
-        if (!repository) {
-            return;
+        if (repository) {
+            void runMutation(() =>
+                repository.update(task.id, { completed }).then(() => undefined),
+            );
         }
-
-        void runMutation(() =>
-            repository.update(task.id, { completed }).then(() => undefined),
-        );
     };
 
     const removeTask = (task: Task): void => {
-        if (!repository) {
+        if (repository) {
+            void runMutation(() => repository.remove(task.id));
+        }
+    };
+
+    const resolveConflict = (
+        conflict: SyncConflict,
+        resolution: 'server' | 'local',
+    ): void => {
+        if (workspace.status !== 'ready') {
             return;
         }
 
-        void runMutation(() => repository.remove(task.id));
+        void runMutation(async () => {
+            if (resolution === 'server') {
+                await workspace.syncRepository.useServerVersion(
+                    conflict.taskId,
+                );
+            } else {
+                await workspace.syncRepository.keepLocalVersion(
+                    conflict.taskId,
+                );
+            }
+        });
     };
 
     return (
@@ -182,24 +222,38 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
             <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <CardTitle>Local tasks</CardTitle>
+                        <CardTitle>Offline-first tasks</CardTitle>
                         <CardDescription className="mt-1">
                             Every edit is written directly to browser SQLite.
-                            Server sync is intentionally not part of this
-                            milestone.
+                            Laravel syncs in the background whenever it is
+                            reachable.
                         </CardDescription>
                     </div>
-                    <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${
-                            networkAvailable
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
-                        }`}
-                    >
-                        {networkAvailable
-                            ? 'Network available'
-                            : 'Offline · local edits enabled'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <span className={syncStatusClass(syncState.phase)}>
+                            {syncStatusLabel(syncState)}
+                        </span>
+                        {workspace.status === 'ready' && (
+                            <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                aria-label="Sync now"
+                                disabled={syncState.phase === 'syncing'}
+                                onClick={() =>
+                                    void workspace.syncEngine.syncNow()
+                                }
+                            >
+                                <RefreshCw
+                                    className={
+                                        syncState.phase === 'syncing'
+                                            ? 'animate-spin'
+                                            : ''
+                                    }
+                                />
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -234,6 +288,15 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                                     ? 'granted'
                                     : 'browser managed'}
                             </span>
+                            <span>Queue: {syncState.pendingCount} pending</span>
+                            {syncState.lastSyncedAt && (
+                                <span>
+                                    Last sync:{' '}
+                                    {new Date(
+                                        syncState.lastSyncedAt,
+                                    ).toLocaleTimeString()}
+                                </span>
+                            )}
                         </div>
 
                         <form className="flex gap-2" onSubmit={createTask}>
@@ -264,11 +327,19 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                             </p>
                         )}
 
+                        {syncState.lastError && !error && (
+                            <p className="text-sm text-amber-700 dark:text-amber-300">
+                                {syncState.lastError} Local edits remain safe
+                                and will retry automatically.
+                            </p>
+                        )}
+
                         <div className="space-y-2">
                             {tasks.length === 0 && (
                                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                                    Create a task, then reload or reopen the
-                                    browser to prove OPFS persistence.
+                                    Create a task online or offline. Browser
+                                    SQLite remains the immediate source of
+                                    truth.
                                 </div>
                             )}
 
@@ -280,7 +351,10 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                                     <Checkbox
                                         checked={task.completed}
                                         aria-label={`Mark ${task.title} as ${task.completed ? 'incomplete' : 'complete'}`}
-                                        disabled={saving}
+                                        disabled={
+                                            saving ||
+                                            task.syncStatus === 'conflict'
+                                        }
                                         onCheckedChange={(checked) =>
                                             updateCompleted(
                                                 task,
@@ -297,12 +371,20 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                                     >
                                         {task.title}
                                     </span>
+                                    {task.syncStatus !== 'synced' && (
+                                        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                                            {task.syncStatus}
+                                        </span>
+                                    )}
                                     <Button
                                         type="button"
                                         size="icon"
                                         variant="ghost"
                                         aria-label={`Edit ${task.title}`}
-                                        disabled={saving}
+                                        disabled={
+                                            saving ||
+                                            task.syncStatus === 'conflict'
+                                        }
                                         onClick={() => setEditingTask(task)}
                                     >
                                         <Pencil />
@@ -312,7 +394,10 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                                         size="icon"
                                         variant="ghost"
                                         aria-label={`Delete ${task.title}`}
-                                        disabled={saving}
+                                        disabled={
+                                            saving ||
+                                            task.syncStatus === 'conflict'
+                                        }
                                         onClick={() => removeTask(task)}
                                     >
                                         <Trash2 />
@@ -320,6 +405,77 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                                 </div>
                             ))}
                         </div>
+
+                        {conflicts.length > 0 && (
+                            <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+                                <div>
+                                    <h2 className="text-sm font-semibold">
+                                        Sync conflicts need your choice
+                                    </h2>
+                                    <p className="text-xs text-muted-foreground">
+                                        Neither version was overwritten
+                                        automatically.
+                                    </p>
+                                </div>
+                                {conflicts.map((conflict) => (
+                                    <div
+                                        key={conflict.taskId}
+                                        className="rounded-md border bg-background p-3"
+                                    >
+                                        <div className="grid gap-2 text-sm sm:grid-cols-2">
+                                            <div>
+                                                <span className="text-xs font-medium text-muted-foreground">
+                                                    This device
+                                                </span>
+                                                <p>
+                                                    {conflict.localRecord.title}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-medium text-muted-foreground">
+                                                    Server
+                                                </span>
+                                                <p>
+                                                    {
+                                                        conflict.serverRecord
+                                                            .title
+                                                    }
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap justify-end gap-2">
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={saving}
+                                                onClick={() =>
+                                                    resolveConflict(
+                                                        conflict,
+                                                        'server',
+                                                    )
+                                                }
+                                            >
+                                                Use server
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                disabled={saving}
+                                                onClick={() =>
+                                                    resolveConflict(
+                                                        conflict,
+                                                        'local',
+                                                    )
+                                                }
+                                            >
+                                                Keep mine
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </>
                 )}
             </CardContent>
@@ -369,4 +525,37 @@ function errorMessage(error: unknown): string {
     return error instanceof Error
         ? error.message
         : 'An unexpected local database error occurred.';
+}
+
+function syncStatusLabel(state: SyncState): string {
+    if (state.phase === 'syncing') {
+        return `Syncing · ${state.pendingCount} queued`;
+    }
+
+    if (state.phase === 'auth-required') {
+        return 'Sign in again to sync';
+    }
+
+    if (state.phase === 'offline') {
+        return `Server unreachable · ${state.pendingCount} queued`;
+    }
+
+    if (state.phase === 'error') {
+        return `Sync error · ${state.rejectedCount} rejected`;
+    }
+
+    if (state.conflictCount > 0) {
+        return `${state.conflictCount} conflict${state.conflictCount === 1 ? '' : 's'}`;
+    }
+
+    return state.pendingCount > 0 ? `${state.pendingCount} queued` : 'Synced';
+}
+
+function syncStatusClass(phase: SyncState['phase']): string {
+    const color =
+        phase === 'idle'
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
+
+    return `rounded-full px-3 py-1 text-xs font-medium ${color}`;
 }

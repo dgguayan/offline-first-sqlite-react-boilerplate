@@ -9,7 +9,9 @@ import {
     createMigrationsTableSql,
     localMigrations,
 } from '@/offline/database/schema';
+import { SqliteSyncRepository } from '@/offline/repositories/sync-repository';
 import { SqliteTaskRepository } from '@/offline/repositories/task-repository';
+import type { ServerTaskRecord } from '@/offline/types/sync';
 
 type SQLiteDatabase = Awaited<
     ReturnType<typeof sqlite3InitModule>
@@ -40,10 +42,16 @@ class MemoryDatabase implements LocalDatabase {
         }) as Row[];
     }
 
-    public async transaction(
+    public transaction(statements: readonly SqlStatement[]): Promise<void>;
+    public transaction<Row>(
         statements: readonly SqlStatement[],
-    ): Promise<void> {
-        this.database.transaction((transaction) => {
+        resultStatement: SqlStatement,
+    ): Promise<Row[]>;
+    public async transaction<Row>(
+        statements: readonly SqlStatement[],
+        resultStatement?: SqlStatement,
+    ): Promise<void | Row[]> {
+        return this.database.transaction((transaction) => {
             for (const statement of statements) {
                 transaction.exec({
                     sql: statement.sql,
@@ -52,6 +60,19 @@ class MemoryDatabase implements LocalDatabase {
                         : undefined,
                 });
             }
+
+            if (!resultStatement) {
+                return undefined;
+            }
+
+            return transaction.exec({
+                sql: resultStatement.sql,
+                bind: resultStatement.parameters
+                    ? Array.from(resultStatement.parameters)
+                    : undefined,
+                rowMode: 'object',
+                returnValue: 'resultRows',
+            }) as Row[];
         });
     }
 
@@ -67,10 +88,12 @@ class MemoryDatabase implements LocalDatabase {
 describe('SqliteTaskRepository', () => {
     let sqliteDatabase: SQLiteDatabase;
     let repository: SqliteTaskRepository;
+    let syncRepository: SqliteSyncRepository;
 
     beforeEach(async () => {
         const sqlite3 = await sqlite3InitModule();
         sqliteDatabase = new sqlite3.oo1.DB(':memory:', 'ct');
+        sqliteDatabase.exec('PRAGMA foreign_keys = ON');
         sqliteDatabase.exec(createMigrationsTableSql);
 
         for (const migration of localMigrations) {
@@ -92,6 +115,10 @@ describe('SqliteTaskRepository', () => {
 
         repository = new SqliteTaskRepository(
             new MemoryDatabase(sqliteDatabase),
+        );
+        syncRepository = new SqliteSyncRepository(
+            new MemoryDatabase(sqliteDatabase),
+            () => repository.notifyExternalChange(),
         );
     });
 
@@ -127,6 +154,12 @@ describe('SqliteTaskRepository', () => {
         await repository.remove(task.id);
 
         expect(await repository.find(task.id)).toBeNull();
+        expect(
+            sqliteDatabase.selectValue(
+                'SELECT COUNT(*) FROM sync_outbox WHERE entity_id = ?',
+                task.id,
+            ),
+        ).toBe(0);
     });
 
     it('notifies subscribers after local writes', async () => {
@@ -150,4 +183,118 @@ describe('SqliteTaskRepository', () => {
         );
         expect(await repository.all()).toEqual([]);
     });
+
+    it('coalesces unsent edits into one atomic create mutation', async () => {
+        const task = await repository.create({ title: 'First draft' });
+
+        await repository.update(task.id, { title: 'Final draft' });
+        await repository.update(task.id, { completed: true });
+
+        const mutations = await syncRepository.claimPending(
+            new Date().toISOString(),
+        );
+
+        expect(mutations).toHaveLength(1);
+        expect(mutations[0]).toMatchObject({
+            entityId: task.id,
+            operation: 'create',
+            baseVersion: null,
+            payload: {
+                title: 'Final draft',
+                completed: true,
+            },
+        });
+    });
+
+    it('keeps an in-flight payload immutable and rebases a newer edit', async () => {
+        const task = await repository.create({ title: 'Original' });
+        const [createMutation] = await syncRepository.claimPending(
+            new Date().toISOString(),
+        );
+
+        await repository.update(task.id, { title: 'Edited during sync' });
+        await syncRepository.markAccepted(
+            createMutation,
+            serverRecord(task, 1),
+        );
+
+        const localTask = await repository.find(task.id);
+        const [updateMutation] = await syncRepository.claimPending(
+            new Date().toISOString(),
+        );
+
+        expect(localTask).toMatchObject({
+            title: 'Edited during sync',
+            version: 1,
+            syncStatus: 'pending',
+        });
+        expect(updateMutation).toMatchObject({
+            operation: 'update',
+            baseVersion: 1,
+            payload: { title: 'Edited during sync' },
+        });
+    });
+
+    it('preserves both versions until a conflict is explicitly resolved', async () => {
+        const task = await repository.create({ title: 'Initial' });
+        const [createMutation] = await syncRepository.claimPending(
+            new Date().toISOString(),
+        );
+        await syncRepository.markAccepted(
+            createMutation,
+            serverRecord(task, 1),
+        );
+        await repository.update(task.id, { title: 'Local edit' });
+        const [updateMutation] = await syncRepository.claimPending(
+            new Date().toISOString(),
+        );
+        const remoteRecord = {
+            ...serverRecord(task, 2),
+            title: 'Server edit',
+        };
+
+        await syncRepository.markConflict(updateMutation, remoteRecord);
+
+        expect(await syncRepository.conflicts()).toMatchObject([
+            {
+                taskId: task.id,
+                localRecord: { title: 'Local edit' },
+                serverRecord: { title: 'Server edit', version: 2 },
+            },
+        ]);
+        expect(await repository.find(task.id)).toMatchObject({
+            title: 'Local edit',
+            syncStatus: 'conflict',
+        });
+
+        await syncRepository.useServerVersion(task.id);
+
+        expect(await repository.find(task.id)).toMatchObject({
+            title: 'Server edit',
+            version: 2,
+            syncStatus: 'synced',
+        });
+        expect(await syncRepository.conflicts()).toEqual([]);
+    });
 });
+
+function serverRecord(
+    task: {
+        id: string;
+        title: string;
+        completed: boolean;
+        createdAt: string;
+        updatedAt: string;
+    },
+    version: number,
+): ServerTaskRecord {
+    return {
+        id: task.id,
+        title: task.title,
+        completed: task.completed,
+        version,
+        created_at: task.createdAt,
+        updated_at: task.updatedAt,
+        deleted_at: null,
+    };
+}

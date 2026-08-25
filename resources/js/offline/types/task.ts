@@ -4,6 +4,9 @@ export type Task = {
     completed: boolean;
     createdAt: string;
     updatedAt: string;
+    version: number;
+    syncStatus: 'pending' | 'synced' | 'conflict' | 'error';
+    deletedAt: string | null;
 };
 
 export type CreateTaskInput = {

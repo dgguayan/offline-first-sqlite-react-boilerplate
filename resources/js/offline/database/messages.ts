@@ -30,6 +30,7 @@ export type DatabaseWorkerRequest =
           id: string;
           type: 'transaction';
           statements: readonly SqlStatement[];
+          resultStatement?: SqlStatement;
       }
     | {
           id: string;

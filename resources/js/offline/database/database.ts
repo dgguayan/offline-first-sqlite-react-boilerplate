@@ -19,6 +19,10 @@ export interface LocalDatabase {
         parameters?: readonly SqlParameter[],
     ): Promise<Row[]>;
     transaction(statements: readonly SqlStatement[]): Promise<void>;
+    transaction<Row>(
+        statements: readonly SqlStatement[],
+        resultStatement: SqlStatement,
+    ): Promise<Row[]>;
     info(): LocalDatabaseInfo;
 }
 
@@ -60,11 +64,20 @@ class WorkerDatabase implements LocalDatabase {
         });
     }
 
-    public transaction(statements: readonly SqlStatement[]): Promise<void> {
+    public transaction(statements: readonly SqlStatement[]): Promise<void>;
+    public transaction<Row>(
+        statements: readonly SqlStatement[],
+        resultStatement: SqlStatement,
+    ): Promise<Row[]>;
+    public transaction<Row>(
+        statements: readonly SqlStatement[],
+        resultStatement?: SqlStatement,
+    ): Promise<void | Row[]> {
         return this.request({
             id: crypto.randomUUID(),
             type: 'transaction',
             statements,
+            resultStatement,
         });
     }
 
