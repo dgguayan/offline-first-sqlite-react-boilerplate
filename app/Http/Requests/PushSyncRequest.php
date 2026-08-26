@@ -28,7 +28,7 @@ class PushSyncRequest extends FormRequest
             'mutations' => ['required', 'array', 'max:100'],
             'mutations.*' => ['required', 'array:id,entity_type,entity_id,operation,base_version,data'],
             'mutations.*.id' => ['required', 'uuid', 'distinct'],
-            'mutations.*.entity_type' => ['required', Rule::in(['task'])],
+            'mutations.*.entity_type' => ['required', Rule::in(['task', 'project'])],
             'mutations.*.entity_id' => ['required', 'uuid'],
             'mutations.*.operation' => ['required', Rule::in(['create', 'update', 'delete'])],
             'mutations.*.base_version' => ['nullable', 'integer', 'min:0'],

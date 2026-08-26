@@ -255,9 +255,10 @@ describe('SqliteTaskRepository', () => {
 
         await syncRepository.markConflict(updateMutation, remoteRecord);
 
-        expect(await syncRepository.conflicts()).toMatchObject([
+        expect(await syncRepository.conflicts('task')).toMatchObject([
             {
-                taskId: task.id,
+                entityType: 'task',
+                entityId: task.id,
                 localRecord: { title: 'Local edit' },
                 serverRecord: { title: 'Server edit', version: 2 },
             },
@@ -267,14 +268,14 @@ describe('SqliteTaskRepository', () => {
             syncStatus: 'conflict',
         });
 
-        await syncRepository.useServerVersion(task.id);
+        await syncRepository.useServerVersion('task', task.id);
 
         expect(await repository.find(task.id)).toMatchObject({
             title: 'Server edit',
             version: 2,
             syncStatus: 'synced',
         });
-        expect(await syncRepository.conflicts()).toEqual([]);
+        expect(await syncRepository.conflicts('task')).toEqual([]);
     });
 });
 

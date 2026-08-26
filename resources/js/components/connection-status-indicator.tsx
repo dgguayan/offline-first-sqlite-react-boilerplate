@@ -4,15 +4,7 @@ export function ConnectionStatusIndicator() {
     const isOffline = useIsOffline();
 
     if (!isOffline) {
-        return (
-            <div
-                className="pointer-events-none fixed top-4 right-4 z-60 rounded-full border border-green-300 bg-green-50 px-3 py-1 text-xs font-medium text-green-900 shadow-sm dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                role="status"
-                aria-live="polite"
-            >
-                Online
-            </div>
-        );
+        return null;
     }
 
     return (

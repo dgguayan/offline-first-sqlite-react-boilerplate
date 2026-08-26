@@ -1,10 +1,12 @@
 import type { LocalDatabase } from '@/offline/database/database';
 import type { SqlStatement } from '@/offline/database/messages';
+import type { Project } from '@/offline/types/project';
 import type {
     OutboxMutation,
-    ServerTaskRecord,
+    ServerEntityRecord,
     SyncChange,
     SyncConflict,
+    SyncEntityType,
     SyncOperation,
     SyncSummary,
 } from '@/offline/types/sync';
@@ -12,7 +14,7 @@ import type { Task } from '@/offline/types/task';
 
 type OutboxRow = {
     id: string;
-    entity_type: 'task';
+    entity_type: SyncEntityType;
     entity_id: string;
     operation: SyncOperation;
     payload: string;
@@ -21,6 +23,7 @@ type OutboxRow = {
 };
 
 type ConflictRow = {
+    entity_type: SyncEntityType;
     entity_id: string;
     local_record: string;
     server_record: string;
@@ -28,7 +31,7 @@ type ConflictRow = {
     created_at: string;
 };
 
-type TaskRow = {
+type EntityRow = {
     id: string;
     title: string;
     completed: number;
@@ -45,10 +48,12 @@ type SummaryRow = {
     rejected_count: number;
 };
 
+type LocalEntity = Task | Project;
+
 export class SqliteSyncRepository {
     public constructor(
         private readonly database: LocalDatabase,
-        private readonly notifyTasksChanged: () => void = () => undefined,
+        private readonly notifyDataChanged: () => void = () => undefined,
     ) {}
 
     public async recoverInterruptedMutations(): Promise<void> {
@@ -129,7 +134,7 @@ export class SqliteSyncRepository {
 
     public async markAccepted(
         mutation: OutboxMutation,
-        serverRecord: ServerTaskRecord,
+        serverRecord: ServerEntityRecord,
     ): Promise<void> {
         const now = new Date().toISOString();
 
@@ -142,85 +147,38 @@ export class SqliteSyncRepository {
                 sql: `
                     UPDATE sync_outbox
                     SET base_version = ?, updated_at = ?
-                    WHERE entity_type = 'task'
+                    WHERE entity_type = ?
                         AND entity_id = ?
                         AND state IN ('pending', 'in_flight')
                 `,
-                parameters: [serverRecord.version, now, mutation.entityId],
-            },
-            {
-                sql: `
-                    UPDATE tasks
-                    SET title = CASE
-                            WHEN NOT EXISTS (
-                                SELECT 1 FROM sync_outbox
-                                WHERE entity_type = 'task'
-                                    AND entity_id = tasks.id
-                                    AND state IN ('pending', 'in_flight')
-                            ) THEN ? ELSE title
-                        END,
-                        completed = CASE
-                            WHEN NOT EXISTS (
-                                SELECT 1 FROM sync_outbox
-                                WHERE entity_type = 'task'
-                                    AND entity_id = tasks.id
-                                    AND state IN ('pending', 'in_flight')
-                            ) THEN ? ELSE completed
-                        END,
-                        created_at = ?,
-                        updated_at = CASE
-                            WHEN NOT EXISTS (
-                                SELECT 1 FROM sync_outbox
-                                WHERE entity_type = 'task'
-                                    AND entity_id = tasks.id
-                                    AND state IN ('pending', 'in_flight')
-                            ) THEN ? ELSE updated_at
-                        END,
-                        deleted_at = CASE
-                            WHEN NOT EXISTS (
-                                SELECT 1 FROM sync_outbox
-                                WHERE entity_type = 'task'
-                                    AND entity_id = tasks.id
-                                    AND state IN ('pending', 'in_flight')
-                            ) THEN ? ELSE deleted_at
-                        END,
-                        version = ?,
-                        sync_status = CASE
-                            WHEN EXISTS (
-                                SELECT 1 FROM sync_outbox
-                                WHERE entity_type = 'task'
-                                    AND entity_id = tasks.id
-                                    AND state IN ('pending', 'in_flight')
-                            ) THEN 'pending' ELSE 'synced'
-                        END
-                    WHERE id = ?
-                `,
                 parameters: [
-                    serverRecord.title,
-                    serverRecord.completed ? 1 : 0,
-                    serverRecord.created_at,
-                    serverRecord.updated_at,
-                    serverRecord.deleted_at,
                     serverRecord.version,
+                    now,
+                    mutation.entityType,
                     mutation.entityId,
                 ],
             },
+            acceptedEntityStatement(mutation, serverRecord),
         ]);
 
-        this.notifyTasksChanged();
+        this.notifyDataChanged();
     }
 
     public async markConflict(
         mutation: OutboxMutation,
-        serverRecord: ServerTaskRecord,
+        serverRecord: ServerEntityRecord,
     ): Promise<void> {
-        const task = await this.findTaskIncludingDeleted(mutation.entityId);
+        const entity = await this.findEntityIncludingDeleted(
+            mutation.entityType,
+            mutation.entityId,
+        );
 
-        if (!task) {
+        if (!entity) {
             return;
         }
 
         const now = new Date().toISOString();
+        const config = entityConfig(mutation.entityType);
 
         await this.database.transaction([
             {
@@ -229,28 +187,29 @@ export class SqliteSyncRepository {
                     SET state = 'conflict',
                         claim_token = NULL,
                         updated_at = ?
-                    WHERE entity_type = 'task' AND entity_id = ?
+                    WHERE entity_type = ? AND entity_id = ?
                 `,
-                parameters: [now, mutation.entityId],
+                parameters: [now, mutation.entityType, mutation.entityId],
             },
             {
                 sql: `
-                    UPDATE tasks
+                    UPDATE ${config.table}
                     SET sync_status = 'conflict'
                     WHERE id = ?
                 `,
                 parameters: [mutation.entityId],
             },
             upsertConflictStatement(
+                mutation.entityType,
                 mutation.entityId,
                 mutation.id,
-                toServerRecord(task),
+                toServerRecord(entity),
                 serverRecord,
                 now,
             ),
         ]);
 
-        this.notifyTasksChanged();
+        this.notifyDataChanged();
     }
 
     public async markRejected(
@@ -258,6 +217,7 @@ export class SqliteSyncRepository {
         message: string,
     ): Promise<void> {
         const now = new Date().toISOString();
+        const config = entityConfig(mutation.entityType);
 
         await this.database.transaction([
             {
@@ -267,19 +227,26 @@ export class SqliteSyncRepository {
                         claim_token = NULL,
                         last_error = ?,
                         updated_at = ?
-                    WHERE entity_type = 'task' AND entity_id = ?
+                    WHERE entity_type = ? AND entity_id = ?
                 `,
-                parameters: [message, now, mutation.entityId],
+                parameters: [
+                    message,
+                    now,
+                    mutation.entityType,
+                    mutation.entityId,
+                ],
             },
             {
                 sql: `
-                    UPDATE tasks SET sync_status = 'error' WHERE id = ?
+                    UPDATE ${config.table}
+                    SET sync_status = 'error'
+                    WHERE id = ?
                 `,
                 parameters: [mutation.entityId],
             },
         ]);
 
-        this.notifyTasksChanged();
+        this.notifyDataChanged();
     }
 
     public async markRetry(
@@ -322,7 +289,7 @@ export class SqliteSyncRepository {
         });
 
         await this.database.transaction(statements);
-        this.notifyTasksChanged();
+        this.notifyDataChanged();
     }
 
     public async cursor(): Promise<number> {
@@ -355,30 +322,41 @@ export class SqliteSyncRepository {
         };
     }
 
-    public async conflicts(): Promise<SyncConflict[]> {
-        const rows = await this.database.select<ConflictRow>(`
-            SELECT
-                entity_id,
-                local_record,
-                server_record,
-                server_version,
-                created_at
-            FROM sync_conflicts
-            ORDER BY created_at DESC
-        `);
+    public async conflicts(
+        entityType?: SyncEntityType,
+    ): Promise<SyncConflict[]> {
+        const rows = await this.database.select<ConflictRow>(
+            `
+                SELECT
+                    entity_type,
+                    entity_id,
+                    local_record,
+                    server_record,
+                    server_version,
+                    created_at
+                FROM sync_conflicts
+                ${entityType ? 'WHERE entity_type = ?' : ''}
+                ORDER BY created_at DESC
+            `,
+            entityType ? [entityType] : undefined,
+        );
 
         return rows.map((row) => ({
-            taskId: row.entity_id,
-            localRecord: JSON.parse(row.local_record) as ServerTaskRecord,
-            serverRecord: JSON.parse(row.server_record) as ServerTaskRecord,
+            entityType: row.entity_type,
+            entityId: row.entity_id,
+            localRecord: JSON.parse(row.local_record) as ServerEntityRecord,
+            serverRecord: JSON.parse(row.server_record) as ServerEntityRecord,
             serverVersion: row.server_version,
             createdAt: row.created_at,
         }));
     }
 
-    public async useServerVersion(taskId: string): Promise<void> {
-        const conflict = (await this.conflicts()).find(
-            (candidate) => candidate.taskId === taskId,
+    public async useServerVersion(
+        entityType: SyncEntityType,
+        entityId: string,
+    ): Promise<void> {
+        const conflict = (await this.conflicts(entityType)).find(
+            (candidate) => candidate.entityId === entityId,
         );
 
         if (!conflict) {
@@ -389,72 +367,77 @@ export class SqliteSyncRepository {
             {
                 sql: `
                     DELETE FROM sync_outbox
-                    WHERE entity_type = 'task' AND entity_id = ?
+                    WHERE entity_type = ? AND entity_id = ?
                 `,
-                parameters: [taskId],
+                parameters: [entityType, entityId],
             },
             {
                 sql: `
                     DELETE FROM sync_conflicts
-                    WHERE entity_type = 'task' AND entity_id = ?
+                    WHERE entity_type = ? AND entity_id = ?
                 `,
-                parameters: [taskId],
+                parameters: [entityType, entityId],
             },
-            upsertServerTaskStatement(conflict.serverRecord),
+            upsertServerEntityStatement(entityType, conflict.serverRecord),
         ]);
 
-        this.notifyTasksChanged();
+        this.notifyDataChanged();
     }
 
-    public async keepLocalVersion(taskId: string): Promise<void> {
-        const [task, conflict] = await Promise.all([
-            this.findTaskIncludingDeleted(taskId),
-            this.conflicts().then((conflicts) =>
-                conflicts.find((candidate) => candidate.taskId === taskId),
+    public async keepLocalVersion(
+        entityType: SyncEntityType,
+        entityId: string,
+    ): Promise<void> {
+        const [entity, conflict] = await Promise.all([
+            this.findEntityIncludingDeleted(entityType, entityId),
+            this.conflicts(entityType).then((conflicts) =>
+                conflicts.find((candidate) => candidate.entityId === entityId),
             ),
         ]);
 
-        if (!task || !conflict) {
+        if (!entity || !conflict) {
             throw new Error('The sync conflict was not found.');
         }
 
         const now = new Date().toISOString();
-        const operation: SyncOperation = task.deletedAt ? 'delete' : 'update';
-        const localRecord = toServerRecord(task);
+        const operation: SyncOperation = entity.deletedAt ? 'delete' : 'update';
+        const localRecord = toServerRecord(entity);
+        const config = entityConfig(entityType);
 
         await this.database.transaction([
             {
                 sql: `
                     DELETE FROM sync_outbox
-                    WHERE entity_type = 'task' AND entity_id = ?
+                    WHERE entity_type = ? AND entity_id = ?
                 `,
-                parameters: [taskId],
+                parameters: [entityType, entityId],
             },
             {
                 sql: `
                     DELETE FROM sync_conflicts
-                    WHERE entity_type = 'task' AND entity_id = ?
+                    WHERE entity_type = ? AND entity_id = ?
                 `,
-                parameters: [taskId],
+                parameters: [entityType, entityId],
             },
             {
                 sql: `
-                    UPDATE tasks
+                    UPDATE ${config.table}
                     SET version = ?, sync_status = 'pending'
                     WHERE id = ?
                 `,
-                parameters: [conflict.serverVersion, taskId],
+                parameters: [conflict.serverVersion, entityId],
             },
             {
                 sql: `
                     INSERT INTO sync_outbox (
                         id, entity_type, entity_id, operation, payload,
                         base_version, state, created_at, updated_at
-                    ) VALUES (?, 'task', ?, ?, ?, ?, 'pending', ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 `,
                 parameters: [
                     crypto.randomUUID(),
-                    taskId,
+                    entityType,
+                    entityId,
                     operation,
                     JSON.stringify(withoutVersion(localRecord)),
                     conflict.serverVersion,
@@ -464,16 +447,20 @@ export class SqliteSyncRepository {
             },
         ]);
 
-        this.notifyTasksChanged();
+        this.notifyDataChanged();
     }
 
-    private async findTaskIncludingDeleted(id: string): Promise<Task | null> {
-        const rows = await this.database.select<TaskRow>(
+    private async findEntityIncludingDeleted(
+        entityType: SyncEntityType,
+        id: string,
+    ): Promise<LocalEntity | null> {
+        const config = entityConfig(entityType);
+        const rows = await this.database.select<EntityRow>(
             `
                 SELECT
                     id, title, completed, created_at, updated_at,
                     version, sync_status, deleted_at
-                FROM tasks
+                FROM ${config.table}
                 WHERE id = ?
                 LIMIT 1
             `,
@@ -511,6 +498,7 @@ function mapOutboxRow(row: OutboxRow): OutboxMutation {
 function pullChangeStatements(change: SyncChange): SqlStatement[] {
     const record = change.record;
     const serverRecord = JSON.stringify(record);
+    const config = entityConfig(change.entity_type);
 
     return [
         {
@@ -520,34 +508,34 @@ function pullChangeStatements(change: SyncChange): SqlStatement[] {
                     server_record, server_version, created_at
                 )
                 SELECT
-                    'task',
-                    tasks.id,
+                    '${config.entityType}',
+                    ${config.table}.id,
                     (
                         SELECT id FROM sync_outbox
-                        WHERE entity_type = 'task'
-                            AND entity_id = tasks.id
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
                         ORDER BY rowid
                         LIMIT 1
                     ),
                     json_object(
-                        'id', tasks.id,
-                        'title', tasks.title,
-                        'completed', json(tasks.completed),
-                        'version', tasks.version,
-                        'created_at', tasks.created_at,
-                        'updated_at', tasks.updated_at,
-                        'deleted_at', tasks.deleted_at
+                        'id', ${config.table}.id,
+                        'title', ${config.table}.title,
+                        'completed', json(${config.table}.completed),
+                        'version', ${config.table}.version,
+                        'created_at', ${config.table}.created_at,
+                        'updated_at', ${config.table}.updated_at,
+                        'deleted_at', ${config.table}.deleted_at
                     ),
                     ?,
                     ?,
                     ?
-                FROM tasks
-                WHERE tasks.id = ?
-                    AND tasks.version < ?
+                FROM ${config.table}
+                WHERE ${config.table}.id = ?
+                    AND ${config.table}.version < ?
                     AND EXISTS (
                         SELECT 1 FROM sync_outbox
-                        WHERE entity_type = 'task'
-                            AND entity_id = tasks.id
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
                     )
                 ON CONFLICT (entity_type, entity_id) DO UPDATE SET
                     server_record = excluded.server_record,
@@ -564,29 +552,97 @@ function pullChangeStatements(change: SyncChange): SqlStatement[] {
         },
         {
             sql: `
-                UPDATE tasks
+                UPDATE ${config.table}
                 SET sync_status = 'conflict'
                 WHERE id = ?
                     AND version < ?
                     AND EXISTS (
                         SELECT 1 FROM sync_outbox
-                        WHERE entity_type = 'task'
-                            AND entity_id = tasks.id
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
                     )
             `,
             parameters: [record.id, record.version],
         },
-        upsertServerTaskStatement(record, true),
+        upsertServerEntityStatement(change.entity_type, record, true),
     ];
 }
 
-function upsertServerTaskStatement(
-    record: ServerTaskRecord,
-    protectUnsynced = false,
+function acceptedEntityStatement(
+    mutation: OutboxMutation,
+    record: ServerEntityRecord,
 ): SqlStatement {
+    const config = entityConfig(mutation.entityType);
+
     return {
         sql: `
-            INSERT INTO tasks (
+            UPDATE ${config.table}
+            SET title = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 FROM sync_outbox
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
+                            AND state IN ('pending', 'in_flight')
+                    ) THEN ? ELSE title
+                END,
+                completed = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 FROM sync_outbox
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
+                            AND state IN ('pending', 'in_flight')
+                    ) THEN ? ELSE completed
+                END,
+                created_at = ?,
+                updated_at = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 FROM sync_outbox
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
+                            AND state IN ('pending', 'in_flight')
+                    ) THEN ? ELSE updated_at
+                END,
+                deleted_at = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 FROM sync_outbox
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
+                            AND state IN ('pending', 'in_flight')
+                    ) THEN ? ELSE deleted_at
+                END,
+                version = ?,
+                sync_status = CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM sync_outbox
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ${config.table}.id
+                            AND state IN ('pending', 'in_flight')
+                    ) THEN 'pending' ELSE 'synced'
+                END
+            WHERE id = ?
+        `,
+        parameters: [
+            record.title,
+            record.completed ? 1 : 0,
+            record.created_at,
+            record.updated_at,
+            record.deleted_at,
+            record.version,
+            mutation.entityId,
+        ],
+    };
+}
+
+function upsertServerEntityStatement(
+    entityType: SyncEntityType,
+    record: ServerEntityRecord,
+    protectUnsynced = false,
+): SqlStatement {
+    const config = entityConfig(entityType);
+
+    return {
+        sql: `
+            INSERT INTO ${config.table} (
                 id, title, completed, created_at, updated_at,
                 version, sync_status, deleted_at
             ) VALUES (?, ?, ?, ?, ?, ?, 'synced', ?)
@@ -600,10 +656,11 @@ function upsertServerTaskStatement(
                 deleted_at = excluded.deleted_at
             ${
                 protectUnsynced
-                    ? `WHERE excluded.version > tasks.version
+                    ? `WHERE excluded.version > ${config.table}.version
                         AND NOT EXISTS (
                         SELECT 1 FROM sync_outbox
-                        WHERE entity_type = 'task' AND entity_id = ?
+                        WHERE entity_type = '${config.entityType}'
+                            AND entity_id = ?
                     )`
                     : ''
             }
@@ -622,10 +679,11 @@ function upsertServerTaskStatement(
 }
 
 function upsertConflictStatement(
+    entityType: SyncEntityType,
     entityId: string,
     mutationId: string,
-    localRecord: ServerTaskRecord,
-    serverRecord: ServerTaskRecord,
+    localRecord: ServerEntityRecord,
+    serverRecord: ServerEntityRecord,
     now: string,
 ): SqlStatement {
     return {
@@ -633,7 +691,7 @@ function upsertConflictStatement(
             INSERT INTO sync_conflicts (
                 entity_type, entity_id, mutation_id, local_record,
                 server_record, server_version, created_at
-            ) VALUES ('task', ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (entity_type, entity_id) DO UPDATE SET
                 mutation_id = excluded.mutation_id,
                 local_record = excluded.local_record,
@@ -642,6 +700,7 @@ function upsertConflictStatement(
                 created_at = excluded.created_at
         `,
         parameters: [
+            entityType,
             entityId,
             mutationId,
             JSON.stringify(localRecord),
@@ -652,21 +711,21 @@ function upsertConflictStatement(
     };
 }
 
-function toServerRecord(task: Task): ServerTaskRecord {
+function toServerRecord(entity: LocalEntity): ServerEntityRecord {
     return {
-        id: task.id,
-        title: task.title,
-        completed: task.completed,
-        version: task.version,
-        created_at: task.createdAt,
-        updated_at: task.updatedAt,
-        deleted_at: task.deletedAt,
+        id: entity.id,
+        title: entity.title,
+        completed: entity.completed,
+        version: entity.version,
+        created_at: entity.createdAt,
+        updated_at: entity.updatedAt,
+        deleted_at: entity.deletedAt,
     };
 }
 
 function withoutVersion(
-    record: ServerTaskRecord,
-): Omit<ServerTaskRecord, 'version'> {
+    record: ServerEntityRecord,
+): Omit<ServerEntityRecord, 'version'> {
     return {
         id: record.id,
         title: record.title,
@@ -675,4 +734,13 @@ function withoutVersion(
         updated_at: record.updated_at,
         deleted_at: record.deleted_at,
     };
+}
+
+function entityConfig(entityType: SyncEntityType): {
+    entityType: SyncEntityType;
+    table: 'tasks' | 'projects';
+} {
+    return entityType === 'task'
+        ? { entityType, table: 'tasks' }
+        : { entityType, table: 'projects' };
 }

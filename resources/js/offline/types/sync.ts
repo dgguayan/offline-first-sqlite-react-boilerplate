@@ -1,6 +1,8 @@
 export type SyncOperation = 'create' | 'update' | 'delete';
 
-export type ServerTaskRecord = {
+export type SyncEntityType = 'task' | 'project';
+
+export type ServerEntityRecord = {
     id: string;
     title: string;
     completed: boolean;
@@ -10,29 +12,34 @@ export type ServerTaskRecord = {
     deleted_at: string | null;
 };
 
+export type ServerTaskRecord = ServerEntityRecord;
+
+export type ServerProjectRecord = ServerEntityRecord;
+
 export type OutboxMutation = {
     id: string;
-    entityType: 'task';
+    entityType: SyncEntityType;
     entityId: string;
     operation: SyncOperation;
-    payload: Omit<ServerTaskRecord, 'version'>;
+    payload: Omit<ServerEntityRecord, 'version'>;
     baseVersion: number | null;
     attempts: number;
 };
 
 export type SyncChange = {
     cursor: number;
-    entity_type: 'task';
+    entity_type: SyncEntityType;
     entity_id: string;
     operation: 'upsert' | 'delete';
     version: number;
-    record: ServerTaskRecord;
+    record: ServerEntityRecord;
 };
 
 export type SyncConflict = {
-    taskId: string;
-    localRecord: ServerTaskRecord;
-    serverRecord: ServerTaskRecord;
+    entityType: SyncEntityType;
+    entityId: string;
+    localRecord: ServerEntityRecord;
+    serverRecord: ServerEntityRecord;
     serverVersion: number;
     createdAt: string;
 };
@@ -45,14 +52,14 @@ export type SyncSummary = {
 
 export type PushAcceptedResult = {
     mutation_id: string;
-    record: ServerTaskRecord;
+    record: ServerEntityRecord;
 };
 
 export type PushConflictResult = {
     mutation_id: string;
     message: string;
     server_version: number;
-    server_record: ServerTaskRecord;
+    server_record: ServerEntityRecord;
 };
 
 export type PushRejectedResult = {

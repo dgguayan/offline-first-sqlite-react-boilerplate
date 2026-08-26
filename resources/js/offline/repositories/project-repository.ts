@@ -1,70 +1,70 @@
 import type { LocalDatabase } from '@/offline/database/database';
 import type {
-    CreateTaskInput,
-    Task,
-    UpdateTaskInput,
-} from '@/offline/types/task';
+    CreateProjectInput,
+    Project,
+    UpdateProjectInput,
+} from '@/offline/types/project';
 
-type TaskRow = {
+type ProjectRow = {
     id: string;
     title: string;
     completed: number;
     created_at: string;
     updated_at: string;
     version: number;
-    sync_status: Task['syncStatus'];
+    sync_status: Project['syncStatus'];
     deleted_at: string | null;
 };
 
-const taskColumns = `
+const projectColumns = `
     id, title, completed, created_at, updated_at,
     version, sync_status, deleted_at
 `;
 
-export interface TaskRepository {
-    all(): Promise<Task[]>;
-    find(id: string): Promise<Task | null>;
-    create(input: CreateTaskInput): Promise<Task>;
-    update(id: string, input: UpdateTaskInput): Promise<Task>;
+export interface ProjectRepository {
+    all(): Promise<Project[]>;
+    find(id: string): Promise<Project | null>;
+    create(input: CreateProjectInput): Promise<Project>;
+    update(id: string, input: UpdateProjectInput): Promise<Project>;
     remove(id: string): Promise<void>;
     subscribe(listener: () => void): () => void;
     notifyExternalChange(): void;
 }
 
-export class SqliteTaskRepository implements TaskRepository {
+export class SqliteProjectRepository implements ProjectRepository {
     private readonly listeners = new Set<() => void>();
 
     public constructor(private readonly database: LocalDatabase) {}
 
-    public async all(): Promise<Task[]> {
-        const rows = await this.database.select<TaskRow>(`
-            SELECT ${taskColumns}
-            FROM tasks
+    public async all(): Promise<Project[]> {
+        const rows = await this.database.select<ProjectRow>(`
+            SELECT ${projectColumns}
+            FROM projects
             WHERE deleted_at IS NULL
             ORDER BY created_at DESC
         `);
 
-        return rows.map(mapTaskRow);
+        return rows.map(mapProjectRow);
     }
 
-    public async find(id: string): Promise<Task | null> {
-        const rows = await this.database.select<TaskRow>(
+    public async find(id: string): Promise<Project | null> {
+        const rows = await this.database.select<ProjectRow>(
             `
-                SELECT ${taskColumns}
-                FROM tasks
+                SELECT ${projectColumns}
+                FROM projects
                 WHERE id = ? AND deleted_at IS NULL
                 LIMIT 1
             `,
             [id],
         );
 
-        return rows[0] ? mapTaskRow(rows[0]) : null;
+        return rows[0] ? mapProjectRow(rows[0]) : null;
     }
 
-    public async create(input: CreateTaskInput): Promise<Task> {
+    public async create(input: CreateProjectInput): Promise<Project> {
         const title = normalizeTitle(input.title);
         const now = new Date().toISOString();
-        const task: Task = {
+        const project: Project = {
             id: crypto.randomUUID(),
             title,
             completed: input.completed ?? false,
@@ -78,53 +78,56 @@ export class SqliteTaskRepository implements TaskRepository {
         await this.database.transaction([
             {
                 sql: `
-                INSERT INTO tasks (
+                INSERT INTO projects (
                     id, title, completed, created_at, updated_at,
                     version, sync_status, deleted_at
                 ) VALUES (?, ?, ?, ?, ?, 0, 'pending', NULL)
             `,
                 parameters: [
-                    task.id,
-                    task.title,
-                    task.completed ? 1 : 0,
-                    task.createdAt,
-                    task.updatedAt,
+                    project.id,
+                    project.title,
+                    project.completed ? 1 : 0,
+                    project.createdAt,
+                    project.updatedAt,
                 ],
             },
-            createOutboxStatement(task, 'create', null, now),
+            createOutboxStatement(project, 'create', null, now),
         ]);
         this.notify();
 
-        return task;
+        return project;
     }
 
-    public async update(id: string, input: UpdateTaskInput): Promise<Task> {
-        const existingTask = await this.find(id);
+    public async update(
+        id: string,
+        input: UpdateProjectInput,
+    ): Promise<Project> {
+        const existingProject = await this.find(id);
 
-        if (!existingTask) {
-            throw new Error(`Task ${id} was not found.`);
+        if (!existingProject) {
+            throw new Error(`Project ${id} was not found.`);
         }
 
-        if (existingTask.syncStatus === 'conflict') {
+        if (existingProject.syncStatus === 'conflict') {
             throw new Error(
-                'Resolve this task’s sync conflict before editing it.',
+                'Resolve this project’s sync conflict before editing it.',
             );
         }
 
-        const task: Task = {
-            ...existingTask,
+        const project: Project = {
+            ...existingProject,
             title:
                 input.title === undefined
-                    ? existingTask.title
+                    ? existingProject.title
                     : normalizeTitle(input.title),
-            completed: input.completed ?? existingTask.completed,
+            completed: input.completed ?? existingProject.completed,
             updatedAt: new Date().toISOString(),
         };
 
         await this.database.transaction([
             {
                 sql: `
-                UPDATE tasks
+                UPDATE projects
                 SET title = ?,
                     completed = ?,
                     updated_at = ?,
@@ -132,10 +135,10 @@ export class SqliteTaskRepository implements TaskRepository {
                 WHERE id = ?
             `,
                 parameters: [
-                    task.title,
-                    task.completed ? 1 : 0,
-                    task.updatedAt,
-                    task.id,
+                    project.title,
+                    project.completed ? 1 : 0,
+                    project.updatedAt,
+                    project.id,
                 ],
             },
             {
@@ -154,15 +157,15 @@ export class SqliteTaskRepository implements TaskRepository {
                         attempts = 0,
                         next_retry_at = NULL,
                         last_error = NULL
-                    WHERE entity_type = 'task'
+                    WHERE entity_type = 'project'
                         AND entity_id = ?
                         AND state = 'pending'
                 `,
                 parameters: [
-                    serializeTask(task),
-                    task.version,
-                    task.updatedAt,
-                    task.id,
+                    serializeProject(project),
+                    project.version,
+                    project.updatedAt,
+                    project.id,
                 ],
             },
             {
@@ -171,47 +174,47 @@ export class SqliteTaskRepository implements TaskRepository {
                         id, entity_type, entity_id, operation, payload,
                         base_version, state, created_at, updated_at
                     )
-                    SELECT ?, 'task', ?, 'update', ?, ?, 'pending', ?, ?
+                    SELECT ?, 'project', ?, 'update', ?, ?, 'pending', ?, ?
                     WHERE NOT EXISTS (
                         SELECT 1
                         FROM sync_outbox
-                        WHERE entity_type = 'task'
+                        WHERE entity_type = 'project'
                             AND entity_id = ?
                             AND state = 'pending'
                     )
                 `,
                 parameters: [
                     crypto.randomUUID(),
-                    task.id,
-                    serializeTask(task),
-                    task.version,
-                    task.updatedAt,
-                    task.updatedAt,
-                    task.id,
+                    project.id,
+                    serializeProject(project),
+                    project.version,
+                    project.updatedAt,
+                    project.updatedAt,
+                    project.id,
                 ],
             },
         ]);
         this.notify();
 
-        return task;
+        return project;
     }
 
     public async remove(id: string): Promise<void> {
-        const task = await this.find(id);
+        const project = await this.find(id);
 
-        if (!task) {
+        if (!project) {
             return;
         }
 
-        if (task.syncStatus === 'conflict') {
+        if (project.syncStatus === 'conflict') {
             throw new Error(
-                'Resolve this task’s sync conflict before deleting it.',
+                'Resolve this project’s sync conflict before deleting it.',
             );
         }
 
         const deletedAt = new Date().toISOString();
-        const deletedTask: Task = {
-            ...task,
+        const deletedProject: Project = {
+            ...project,
             updatedAt: deletedAt,
             deletedAt,
             syncStatus: 'pending',
@@ -220,21 +223,21 @@ export class SqliteTaskRepository implements TaskRepository {
         await this.database.transaction([
             {
                 sql: `
-                    DELETE FROM tasks
+                    DELETE FROM projects
                     WHERE id = ?
                         AND EXISTS (
                             SELECT 1
                             FROM sync_outbox
-                            WHERE entity_type = 'task'
-                                AND entity_id = tasks.id
+                            WHERE entity_type = 'project'
+                                AND entity_id = projects.id
                                 AND operation = 'create'
                                 AND state = 'pending'
                         )
                         AND NOT EXISTS (
                             SELECT 1
                             FROM sync_outbox
-                            WHERE entity_type = 'task'
-                                AND entity_id = tasks.id
+                            WHERE entity_type = 'project'
+                                AND entity_id = projects.id
                                 AND state = 'in_flight'
                         )
                 `,
@@ -243,19 +246,19 @@ export class SqliteTaskRepository implements TaskRepository {
             {
                 sql: `
                     DELETE FROM sync_outbox
-                    WHERE entity_type = 'task'
+                    WHERE entity_type = 'project'
                         AND entity_id = ?
                         AND operation = 'create'
                         AND state = 'pending'
                         AND NOT EXISTS (
-                            SELECT 1 FROM tasks WHERE id = ?
+                            SELECT 1 FROM projects WHERE id = ?
                         )
                 `,
                 parameters: [id, id],
             },
             {
                 sql: `
-                    UPDATE tasks
+                    UPDATE projects
                     SET deleted_at = ?,
                         updated_at = ?,
                         sync_status = 'pending'
@@ -273,13 +276,13 @@ export class SqliteTaskRepository implements TaskRepository {
                         attempts = 0,
                         next_retry_at = NULL,
                         last_error = NULL
-                    WHERE entity_type = 'task'
+                    WHERE entity_type = 'project'
                         AND entity_id = ?
                         AND state = 'pending'
                 `,
                 parameters: [
-                    serializeTask(deletedTask),
-                    task.version,
+                    serializeProject(deletedProject),
+                    project.version,
                     deletedAt,
                     id,
                 ],
@@ -290,12 +293,12 @@ export class SqliteTaskRepository implements TaskRepository {
                         id, entity_type, entity_id, operation, payload,
                         base_version, state, created_at, updated_at
                     )
-                    SELECT ?, 'task', ?, 'delete', ?, ?, 'pending', ?, ?
-                    WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ?)
+                    SELECT ?, 'project', ?, 'delete', ?, ?, 'pending', ?, ?
+                    WHERE EXISTS (SELECT 1 FROM projects WHERE id = ?)
                         AND NOT EXISTS (
                             SELECT 1
                             FROM sync_outbox
-                            WHERE entity_type = 'task'
+                            WHERE entity_type = 'project'
                                 AND entity_id = ?
                                 AND state = 'pending'
                         )
@@ -303,8 +306,8 @@ export class SqliteTaskRepository implements TaskRepository {
                 parameters: [
                     crypto.randomUUID(),
                     id,
-                    serializeTask(deletedTask),
-                    task.version,
+                    serializeProject(deletedProject),
+                    project.version,
                     deletedAt,
                     deletedAt,
                     id,
@@ -338,17 +341,17 @@ function normalizeTitle(title: string): string {
     const normalizedTitle = title.trim();
 
     if (!normalizedTitle) {
-        throw new Error('A task title is required.');
+        throw new Error('A project title is required.');
     }
 
     if (normalizedTitle.length > 200) {
-        throw new Error('A task title cannot exceed 200 characters.');
+        throw new Error('A project title cannot exceed 200 characters.');
     }
 
     return normalizedTitle;
 }
 
-function mapTaskRow(row: TaskRow): Task {
+function mapProjectRow(row: ProjectRow): Project {
     return {
         id: row.id,
         title: row.title,
@@ -361,19 +364,19 @@ function mapTaskRow(row: TaskRow): Task {
     };
 }
 
-function serializeTask(task: Task): string {
+function serializeProject(project: Project): string {
     return JSON.stringify({
-        id: task.id,
-        title: task.title,
-        completed: task.completed,
-        created_at: task.createdAt,
-        updated_at: task.updatedAt,
-        deleted_at: task.deletedAt,
+        id: project.id,
+        title: project.title,
+        completed: project.completed,
+        created_at: project.createdAt,
+        updated_at: project.updatedAt,
+        deleted_at: project.deletedAt,
     });
 }
 
 function createOutboxStatement(
-    task: Task,
+    project: Project,
     operation: 'create' | 'update' | 'delete',
     baseVersion: number | null,
     now: string,
@@ -383,13 +386,13 @@ function createOutboxStatement(
             INSERT INTO sync_outbox (
                 id, entity_type, entity_id, operation, payload,
                 base_version, state, created_at, updated_at
-            ) VALUES (?, 'task', ?, ?, ?, ?, 'pending', ?, ?)
+            ) VALUES (?, 'project', ?, ?, ?, ?, 'pending', ?, ?)
         `,
         parameters: [
             crypto.randomUUID(),
-            task.id,
+            project.id,
             operation,
-            serializeTask(task),
+            serializeProject(project),
             baseVersion,
             now,
             now,

@@ -2,6 +2,7 @@
 
 namespace App\Services\Sync;
 
+use App\Models\Project;
 use App\Models\SyncMutation;
 use App\Models\Task;
 use App\Models\User;
@@ -63,6 +64,7 @@ class PushSyncService
             }
 
             $entityId = (string) $mutation['entity_id'];
+            $entityType = (string) $mutation['entity_type'];
             /** @var array<string, mixed> $data */
             $data = $mutation['data'];
             $operation = (string) $mutation['operation'];
@@ -94,85 +96,116 @@ class PushSyncService
                 );
             }
 
-            $task = Task::query()->lockForUpdate()->find($entityId);
+            $entity = $this->findEntity($entityType, $entityId);
 
-            if ($task && $task->user_id !== $user->id) {
+            if ($entity && $entity->user_id !== $user->id) {
                 return $this->rememberResult(
                     $user,
                     $deviceId,
                     $mutation,
                     $this->rejectedResult(
                         $mutationId,
-                        'This task identifier is unavailable.',
+                        "This {$entityType} identifier is unavailable.",
                     ),
                 );
             }
 
             if ($operation === 'create') {
-                if ($task) {
+                if ($entity) {
                     return $this->rememberResult(
                         $user,
                         $deviceId,
                         $mutation,
-                        $this->conflictResult($mutationId, $task),
+                        $this->conflictResult($mutationId, $entityType, $entity),
                     );
                 }
 
-                $task = Task::query()->create([
-                    'id' => $entityId,
-                    'user_id' => $user->id,
-                    'title' => (string) $data['title'],
-                    'completed' => (bool) $data['completed'],
-                    'version' => 1,
-                    'deleted_at' => null,
-                ]);
+                $entity = $this->createEntity(
+                    $entityType,
+                    $user,
+                    $entityId,
+                    $data,
+                );
 
                 return $this->rememberResult(
                     $user,
                     $deviceId,
                     $mutation,
-                    $this->acceptedResult($mutationId, $task),
+                    $this->acceptedResult($mutationId, $entity),
                 );
             }
 
-            if (! $task) {
+            if (! $entity) {
                 return $this->rememberResult(
                     $user,
                     $deviceId,
                     $mutation,
                     $this->rejectedResult(
                         $mutationId,
-                        'The task does not exist on the server.',
+                        "The {$entityType} does not exist on the server.",
                     ),
                 );
             }
 
-            if ($task->version !== $baseVersion) {
+            if ($entity->version !== $baseVersion) {
                 return $this->rememberResult(
                     $user,
                     $deviceId,
                     $mutation,
-                    $this->conflictResult($mutationId, $task),
+                    $this->conflictResult($mutationId, $entityType, $entity),
                 );
             }
 
             if ($operation === 'delete') {
-                $task->deleted_at = now();
+                $entity->deleted_at = now();
             } else {
-                $task->title = (string) $data['title'];
-                $task->completed = (bool) $data['completed'];
-                $task->deleted_at = null;
+                $entity->title = (string) $data['title'];
+                $entity->completed = (bool) $data['completed'];
+                $entity->deleted_at = null;
             }
 
-            $task->save();
+            $entity->save();
 
             return $this->rememberResult(
                 $user,
                 $deviceId,
                 $mutation,
-                $this->acceptedResult($mutationId, $task),
+                $this->acceptedResult($mutationId, $entity),
             );
         }, 3);
+    }
+
+    private function findEntity(string $entityType, string $entityId): Task|Project|null
+    {
+        return match ($entityType) {
+            'task' => Task::query()->lockForUpdate()->find($entityId),
+            'project' => Project::query()->lockForUpdate()->find($entityId),
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function createEntity(
+        string $entityType,
+        User $user,
+        string $entityId,
+        array $data,
+    ): Task|Project {
+        $attributes = [
+            'id' => $entityId,
+            'user_id' => $user->id,
+            'title' => (string) $data['title'],
+            'completed' => (bool) $data['completed'],
+            'version' => 1,
+            'deleted_at' => null,
+        ];
+
+        return match ($entityType) {
+            'task' => Task::query()->create($attributes),
+            'project' => Project::query()->create($attributes),
+        };
     }
 
     /**
@@ -203,26 +236,29 @@ class PushSyncService
     /**
      * @return array<string, mixed>
      */
-    private function acceptedResult(string $mutationId, Task $task): array
+    private function acceptedResult(string $mutationId, Task|Project $entity): array
     {
         return [
             'status' => 'accepted',
             'mutation_id' => $mutationId,
-            'record' => $task->syncRecord(),
+            'record' => $entity->syncRecord(),
         ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function conflictResult(string $mutationId, Task $task): array
-    {
+    private function conflictResult(
+        string $mutationId,
+        string $entityType,
+        Task|Project $entity,
+    ): array {
         return [
             'status' => 'conflicts',
             'mutation_id' => $mutationId,
-            'message' => 'The task changed on the server.',
-            'server_version' => $task->version,
-            'server_record' => $task->syncRecord(),
+            'message' => "The {$entityType} changed on the server.",
+            'server_version' => $entity->version,
+            'server_record' => $entity->syncRecord(),
         ];
     }
 

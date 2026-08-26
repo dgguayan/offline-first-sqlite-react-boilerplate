@@ -4,6 +4,7 @@ import type { ResolvedComponent } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
+import { ProjectWorkspace } from '@/components/project-workspace';
 import { PwaUpdatePrompt } from '@/components/pwa-update-prompt';
 import { TaskWorkspace } from '@/components/task-workspace';
 import {
@@ -21,7 +22,7 @@ import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import { getOfflineAppState } from '@/offline/app-state';
 import { getActiveOfflineUser } from '@/offline/database/database';
-import { dashboard } from '@/routes';
+import { dashboard, projects } from '@/routes';
 import type { User } from '@/types';
 import '../css/app.css';
 
@@ -33,6 +34,7 @@ if (!rootElement) {
 
 const userScope = getActiveOfflineUser();
 const rememberedState = getOfflineAppState(userScope);
+const isProjectsPage = /^\/projects(?:\/|$)/.test(window.location.pathname);
 const appName =
     rememberedState?.name ?? import.meta.env.VITE_APP_NAME ?? 'Laravel';
 const user = rememberedState?.user ?? fallbackUser(userScope);
@@ -45,7 +47,7 @@ const initialPage: Page<{
     auth: { user: User };
     sidebarOpen: boolean;
 }> = {
-    component: 'dashboard',
+    component: isProjectsPage ? 'project' : 'dashboard',
     props: {
         name: appName,
         auth: { user },
@@ -99,6 +101,44 @@ OfflineDashboard.layout = {
     ],
 };
 
+function OfflineProjects() {
+    return (
+        <>
+            <Head title="Projects" />
+            <div className="flex h-full flex-1 flex-col overflow-x-auto rounded-xl p-4">
+                {userScope ? (
+                    <ProjectWorkspace userScope={userScope} />
+                ) : (
+                    <Card className="mx-auto w-full max-w-3xl">
+                        <CardHeader>
+                            <CardTitle>Offline-first projects</CardTitle>
+                            <CardDescription>
+                                Local project data becomes available after the
+                                first authenticated Projects visit.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">
+                                Sign in while online and open Projects once to
+                                activate this browser&apos;s offline workspace.
+                            </p>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        </>
+    );
+}
+
+OfflineProjects.layout = {
+    breadcrumbs: [
+        {
+            title: 'Projects',
+            href: projects(),
+        },
+    ],
+};
+
 async function resolveComponent(name: string): Promise<ResolvedComponent> {
     const page = await resolvePageComponent<{ default: ResolvedComponent }>(
         `./pages/${name}.tsx`,
@@ -114,7 +154,11 @@ createRoot(rootElement).render(
     <TooltipProvider delayDuration={0}>
         <App
             initialPage={initialPage}
-            initialComponent={OfflineDashboard as unknown as ResolvedComponent}
+            initialComponent={
+                (isProjectsPage
+                    ? OfflineProjects
+                    : OfflineDashboard) as unknown as ResolvedComponent
+            }
             resolveComponent={resolveComponent}
             titleCallback={(title) =>
                 title ? `${title} - ${appName}` : appName

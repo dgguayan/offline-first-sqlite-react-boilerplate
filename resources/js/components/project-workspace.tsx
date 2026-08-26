@@ -15,14 +15,14 @@ import {
     initializeDatabase,
     rememberActiveOfflineUser,
 } from '@/offline/database/database';
+import type { ProjectRepository } from '@/offline/repositories/project-repository';
+import { SqliteProjectRepository } from '@/offline/repositories/project-repository';
 import { SqliteSyncRepository } from '@/offline/repositories/sync-repository';
-import { SqliteTaskRepository } from '@/offline/repositories/task-repository';
-import type { TaskRepository } from '@/offline/repositories/task-repository';
 import { SyncEngine } from '@/offline/sync/sync-engine';
 import type { SyncState } from '@/offline/sync/sync-engine';
 import { useSyncState } from '@/offline/sync/use-sync-state';
+import type { Project } from '@/offline/types/project';
 import type { SyncConflict } from '@/offline/types/sync';
-import type { Task } from '@/offline/types/task';
 
 type Props = {
     userScope: string;
@@ -33,7 +33,7 @@ type WorkspaceState =
     | { status: 'loading' }
     | {
           status: 'ready';
-          repository: TaskRepository;
+          repository: ProjectRepository;
           syncRepository: SqliteSyncRepository;
           syncEngine: SyncEngine;
           sqliteVersion: string;
@@ -41,14 +41,17 @@ type WorkspaceState =
       }
     | { status: 'error'; message: string };
 
-export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
+export function ProjectWorkspace({
+    userScope,
+    rememberUserScope = false,
+}: Props) {
     const [workspace, setWorkspace] = useState<WorkspaceState>({
         status: 'loading',
     });
-    const [tasks, setTasks] = useState<Task[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
     const [title, setTitle] = useState('');
-    const [editingTask, setEditingTask] = useState<Task | null>(null);
+    const [editingProject, setEditingProject] = useState<Project | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const syncEngine =
@@ -66,21 +69,21 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
 
         void initializeDatabase(userScope)
             .then(async (database) => {
-                const repository = new SqliteTaskRepository(database);
+                const repository = new SqliteProjectRepository(database);
                 const syncRepository = new SqliteSyncRepository(database, () =>
                     repository.notifyExternalChange(),
                 );
                 engine = new SyncEngine(syncRepository);
 
-                const reloadTasks = async () => {
-                    const localTasks = await repository.all();
+                const reloadProjects = async () => {
+                    const localProjects = await repository.all();
 
                     if (!cancelled) {
-                        setTasks(localTasks);
+                        setProjects(localProjects);
                     }
                 };
 
-                await reloadTasks();
+                await reloadProjects();
 
                 if (cancelled) {
                     engine.stop();
@@ -89,10 +92,11 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                 }
 
                 unsubscribe = repository.subscribe(() => {
-                    void reloadTasks().catch((repositoryError: unknown) => {
+                    void reloadProjects().catch((repositoryError: unknown) => {
                         setError(errorMessage(repositoryError));
                     });
                 });
+
                 const info = database.info();
                 setWorkspace({
                     status: 'ready',
@@ -130,7 +134,7 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         }
 
         void workspace.syncRepository
-            .conflicts('task')
+            .conflicts('project')
             .then(setConflicts)
             .catch((conflictError: unknown) => {
                 setError(errorMessage(conflictError));
@@ -154,7 +158,7 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         }
     };
 
-    const createTask = async (event: FormEvent<HTMLFormElement>) => {
+    const createProject = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
         if (!repository) {
@@ -170,29 +174,31 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
     const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        if (!repository || !editingTask) {
+        if (!repository || !editingProject) {
             return;
         }
 
         await runMutation(async () => {
-            await repository.update(editingTask.id, {
-                title: editingTask.title,
+            await repository.update(editingProject.id, {
+                title: editingProject.title,
             });
-            setEditingTask(null);
+            setEditingProject(null);
         });
     };
 
-    const updateCompleted = (task: Task, completed: boolean): void => {
+    const updateCompleted = (project: Project, completed: boolean): void => {
         if (repository) {
             void runMutation(() =>
-                repository.update(task.id, { completed }).then(() => undefined),
+                repository
+                    .update(project.id, { completed })
+                    .then(() => undefined),
             );
         }
     };
 
-    const removeTask = (task: Task): void => {
+    const removeProject = (project: Project): void => {
         if (repository) {
-            void runMutation(() => repository.remove(task.id));
+            void runMutation(() => repository.remove(project.id));
         }
     };
 
@@ -207,12 +213,12 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
         void runMutation(async () => {
             if (resolution === 'server') {
                 await workspace.syncRepository.useServerVersion(
-                    'task',
+                    'project',
                     conflict.entityId,
                 );
             } else {
                 await workspace.syncRepository.keepLocalVersion(
-                    'task',
+                    'project',
                     conflict.entityId,
                 );
             }
@@ -224,7 +230,7 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
             <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <CardTitle>Offline-first tasks</CardTitle>
+                        <CardTitle>Offline-first projects</CardTitle>
                         <CardDescription className="mt-1">
                             Every edit is written directly to browser SQLite.
                             Laravel syncs in the background whenever it is
@@ -301,15 +307,15 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                             )}
                         </div>
 
-                        <form className="flex gap-2" onSubmit={createTask}>
+                        <form className="flex gap-2" onSubmit={createProject}>
                             <Input
                                 value={title}
                                 onChange={(event) =>
                                     setTitle(event.target.value)
                                 }
                                 maxLength={200}
-                                placeholder="What needs to be done?"
-                                aria-label="New task title"
+                                placeholder="Project title"
+                                aria-label="New project title"
                             />
                             <Button
                                 type="submit"
@@ -339,57 +345,59 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                             )}
 
                         <div className="space-y-2">
-                            {tasks.length === 0 && (
+                            {projects.length === 0 && (
                                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                                    Create a task online or offline. Browser
+                                    Create a project online or offline. Browser
                                     SQLite remains the immediate source of
                                     truth.
                                 </div>
                             )}
 
-                            {tasks.map((task) => (
+                            {projects.map((project) => (
                                 <div
-                                    key={task.id}
+                                    key={project.id}
                                     className="flex items-center gap-3 rounded-lg border p-3"
                                 >
                                     <Checkbox
-                                        checked={task.completed}
-                                        aria-label={`Mark ${task.title} as ${task.completed ? 'incomplete' : 'complete'}`}
+                                        checked={project.completed}
+                                        aria-label={`Mark ${project.title} as ${project.completed ? 'incomplete' : 'complete'}`}
                                         disabled={
                                             saving ||
-                                            task.syncStatus === 'conflict'
+                                            project.syncStatus === 'conflict'
                                         }
                                         onCheckedChange={(checked) =>
                                             updateCompleted(
-                                                task,
+                                                project,
                                                 checked === true,
                                             )
                                         }
                                     />
                                     <span
                                         className={`min-w-0 flex-1 text-sm break-words ${
-                                            task.completed
+                                            project.completed
                                                 ? 'text-muted-foreground line-through'
                                                 : ''
                                         }`}
                                     >
-                                        {task.title}
+                                        {project.title}
                                     </span>
-                                    {task.syncStatus !== 'synced' && (
+                                    {project.syncStatus !== 'synced' && (
                                         <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                                            {task.syncStatus}
+                                            {project.syncStatus}
                                         </span>
                                     )}
                                     <Button
                                         type="button"
                                         size="icon"
                                         variant="ghost"
-                                        aria-label={`Edit ${task.title}`}
+                                        aria-label={`Edit ${project.title}`}
                                         disabled={
                                             saving ||
-                                            task.syncStatus === 'conflict'
+                                            project.syncStatus === 'conflict'
                                         }
-                                        onClick={() => setEditingTask(task)}
+                                        onClick={() =>
+                                            setEditingProject(project)
+                                        }
                                     >
                                         <Pencil />
                                     </Button>
@@ -397,12 +405,12 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                                         type="button"
                                         size="icon"
                                         variant="ghost"
-                                        aria-label={`Delete ${task.title}`}
+                                        aria-label={`Delete ${project.title}`}
                                         disabled={
                                             saving ||
-                                            task.syncStatus === 'conflict'
+                                            project.syncStatus === 'conflict'
                                         }
-                                        onClick={() => removeTask(task)}
+                                        onClick={() => removeProject(project)}
                                     >
                                         <Trash2 />
                                     </Button>
@@ -484,21 +492,21 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                 )}
             </CardContent>
 
-            {editingTask && repository && (
+            {editingProject && repository && (
                 <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4">
                     <form
                         className="w-full max-w-md rounded-xl border bg-background p-5 shadow-xl"
                         onSubmit={saveEdit}
                     >
-                        <h2 className="font-semibold">Edit task</h2>
+                        <h2 className="font-semibold">Edit project</h2>
                         <Input
                             className="mt-4"
-                            value={editingTask.title}
+                            value={editingProject.title}
                             maxLength={200}
                             autoFocus
                             onChange={(event) =>
-                                setEditingTask({
-                                    ...editingTask,
+                                setEditingProject({
+                                    ...editingProject,
                                     title: event.target.value,
                                 })
                             }
@@ -507,13 +515,15 @@ export function TaskWorkspace({ userScope, rememberUserScope = false }: Props) {
                             <Button
                                 type="button"
                                 variant="ghost"
-                                onClick={() => setEditingTask(null)}
+                                onClick={() => setEditingProject(null)}
                             >
                                 Cancel
                             </Button>
                             <Button
                                 type="submit"
-                                disabled={saving || !editingTask.title.trim()}
+                                disabled={
+                                    saving || !editingProject.title.trim()
+                                }
                             >
                                 Save
                             </Button>
