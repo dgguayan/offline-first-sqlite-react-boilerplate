@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property bool $completed
  * @property int $version
- * @property Carbon|null $deleted_at
+ * @property CarbonInterface|null $deleted_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */

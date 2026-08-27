@@ -317,6 +317,191 @@ describe('SqliteProjectRepository', () => {
 
         expect(await repository.find(projectId)).toBeNull();
         expect(await syncRepository.cursor()).toBe(2);
+
+        await syncRepository.applyPullBatch(
+            [
+                {
+                    cursor: 3,
+                    entity_type: 'project',
+                    entity_id: projectId,
+                    operation: 'restore',
+                    version: 3,
+                    record: {
+                        ...record,
+                        version: 3,
+                        updated_at: new Date().toISOString(),
+                        deleted_at: null,
+                    },
+                },
+            ],
+            3,
+        );
+
+        expect(await repository.find(projectId)).toMatchObject({
+            title: 'Pulled project',
+            version: 3,
+            syncStatus: 'synced',
+            deletedAt: null,
+        });
+        expect(await syncRepository.cursor()).toBe(3);
+    });
+
+    it('shows an admin-restored project while preserving a local conflict', async () => {
+        const projectId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const record: ServerProjectRecord = {
+            id: projectId,
+            title: 'Project with a local edit',
+            completed: false,
+            version: 1,
+            created_at: now,
+            updated_at: now,
+            deleted_at: null,
+        };
+
+        await syncRepository.applyPullBatch(
+            [
+                {
+                    cursor: 1,
+                    entity_type: 'project',
+                    entity_id: projectId,
+                    operation: 'upsert',
+                    version: 1,
+                    record,
+                },
+                {
+                    cursor: 2,
+                    entity_type: 'project',
+                    entity_id: projectId,
+                    operation: 'delete',
+                    version: 2,
+                    record: {
+                        ...record,
+                        version: 2,
+                        updated_at: now,
+                        deleted_at: now,
+                    },
+                },
+            ],
+            2,
+        );
+        sqliteDatabase.exec({
+            sql: 'UPDATE projects SET title = ? WHERE id = ?',
+            bind: ['Unsynced local title', projectId],
+        });
+        sqliteDatabase.exec({
+            sql: `
+                INSERT INTO sync_outbox (
+                    id, entity_type, entity_id, operation, payload,
+                    base_version, state, created_at, updated_at
+                ) VALUES (?, 'project', ?, 'update', ?, 2, 'conflict', ?, ?)
+            `,
+            bind: [
+                crypto.randomUUID(),
+                projectId,
+                JSON.stringify({ title: 'Unsynced local title' }),
+                now,
+                now,
+            ],
+        });
+
+        await syncRepository.applyPullBatch(
+            [
+                {
+                    cursor: 3,
+                    entity_type: 'project',
+                    entity_id: projectId,
+                    operation: 'restore',
+                    version: 3,
+                    record: {
+                        ...record,
+                        version: 3,
+                        updated_at: now,
+                        deleted_at: null,
+                    },
+                },
+            ],
+            3,
+        );
+
+        expect(await repository.find(projectId)).toMatchObject({
+            title: 'Unsynced local title',
+            version: 2,
+            syncStatus: 'conflict',
+            deletedAt: null,
+        });
+        expect(await syncRepository.conflicts('project')).toMatchObject([
+            {
+                entityId: projectId,
+                serverRecord: { version: 3, deleted_at: null },
+            },
+        ]);
+        expect(await syncRepository.cursor()).toBe(3);
+    });
+
+    it('repairs an already-consumed restore during the local schema upgrade', async () => {
+        const projectId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const activeRecord: ServerProjectRecord = {
+            id: projectId,
+            title: 'Previously restored project',
+            completed: false,
+            version: 3,
+            created_at: now,
+            updated_at: now,
+            deleted_at: null,
+        };
+
+        await syncRepository.applyPullBatch(
+            [
+                {
+                    cursor: 2,
+                    entity_type: 'project',
+                    entity_id: projectId,
+                    operation: 'delete',
+                    version: 2,
+                    record: {
+                        ...activeRecord,
+                        version: 2,
+                        deleted_at: now,
+                    },
+                },
+            ],
+            3,
+        );
+        sqliteDatabase.exec({
+            sql: `
+                INSERT INTO sync_conflicts (
+                    entity_type, entity_id, mutation_id, local_record,
+                    server_record, server_version, created_at
+                ) VALUES ('project', ?, NULL, ?, ?, 3, ?)
+            `,
+            bind: [
+                projectId,
+                JSON.stringify({
+                    ...activeRecord,
+                    version: 2,
+                    deleted_at: now,
+                }),
+                JSON.stringify(activeRecord),
+                now,
+            ],
+        });
+
+        const repairMigration = localMigrations.find(
+            (migration) => migration.version === 4,
+        );
+        expect(repairMigration).toBeDefined();
+
+        for (const statement of repairMigration!.statements) {
+            sqliteDatabase.exec(statement);
+        }
+
+        expect(await repository.find(projectId)).toMatchObject({
+            version: 2,
+            deletedAt: null,
+        });
+        expect(await syncRepository.cursor()).toBe(0);
     });
 });
 

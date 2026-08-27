@@ -4,12 +4,16 @@ use App\Models\Project;
 use App\Models\SyncChange;
 use App\Models\SyncMutation;
 use App\Models\User;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Str;
 
 test('the projects page requires a verified user', function () {
     $this->get(route('projects'))->assertRedirect(route('login'));
 
-    $this->actingAs(User::factory()->create())
+    $user = User::factory()->create();
+    $this->seed(RbacSeeder::class);
+
+    $this->actingAs($user)
         ->get(route('projects'))
         ->assertOk();
 });

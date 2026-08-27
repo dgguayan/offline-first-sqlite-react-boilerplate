@@ -22,15 +22,15 @@ class PullSyncService
         $page = $changes->take($limit)->values();
 
         return [
-            'changes' => $page->map(fn (SyncChange $change): array => [
+            'changes' => array_values($page->map(fn (SyncChange $change): array => [
                 'cursor' => $change->cursor,
                 'entity_type' => $change->entity_type,
                 'entity_id' => $change->entity_id,
                 'operation' => $change->operation,
                 'version' => $change->version,
                 'record' => $change->record,
-            ])->all(),
-            'next_cursor' => (int) ($page->last()?->cursor ?? $cursor),
+            ])->all()),
+            'next_cursor' => $page->isEmpty() ? $cursor : (int) $page->last()->cursor,
             'has_more' => $hasMore,
         ];
     }

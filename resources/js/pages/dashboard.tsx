@@ -12,8 +12,9 @@ export default function Dashboard() {
             name,
             user: auth.user,
             sidebarOpen,
+            permissions: auth.permissions,
         });
-    }, [auth.user, name, sidebarOpen]);
+    }, [auth.permissions, auth.user, name, sidebarOpen]);
 
     return (
         <>

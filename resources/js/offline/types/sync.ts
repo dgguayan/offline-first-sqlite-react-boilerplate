@@ -30,7 +30,7 @@ export type SyncChange = {
     cursor: number;
     entity_type: SyncEntityType;
     entity_id: string;
-    operation: 'upsert' | 'delete';
+    operation: 'upsert' | 'delete' | 'restore';
     version: number;
     record: ServerEntityRecord;
 };

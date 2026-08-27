@@ -24,6 +24,7 @@ import { getOfflineAppState } from '@/offline/app-state';
 import { getActiveOfflineUser } from '@/offline/database/database';
 import { dashboard, projects } from '@/routes';
 import type { User } from '@/types';
+import type { PermissionScope } from '@/types';
 import '../css/app.css';
 
 const rootElement = document.getElementById('offline-app');
@@ -44,13 +45,21 @@ const pages = import.meta.glob<{ default: ResolvedComponent }>(
 
 const initialPage: Page<{
     name: string;
-    auth: { user: User };
+    auth: {
+        user: User;
+        permissions: Record<string, PermissionScope>;
+        roles: string[];
+    };
     sidebarOpen: boolean;
 }> = {
     component: isProjectsPage ? 'project' : 'dashboard',
     props: {
         name: appName,
-        auth: { user },
+        auth: {
+            user,
+            permissions: rememberedState?.permissions ?? {},
+            roles: [],
+        },
         sidebarOpen: rememberedSidebarState(
             rememberedState?.sidebarOpen ?? true,
         ),

@@ -500,7 +500,7 @@ function pullChangeStatements(change: SyncChange): SqlStatement[] {
     const serverRecord = JSON.stringify(record);
     const config = entityConfig(change.entity_type);
 
-    return [
+    const statements: SqlStatement[] = [
         {
             sql: `
                 INSERT INTO sync_conflicts (
@@ -566,6 +566,32 @@ function pullChangeStatements(change: SyncChange): SqlStatement[] {
         },
         upsertServerEntityStatement(change.entity_type, record, true),
     ];
+
+    if (change.operation === 'restore') {
+        statements.push(
+            restoreEntityVisibilityStatement(change.entity_type, record),
+        );
+    }
+
+    return statements;
+}
+
+function restoreEntityVisibilityStatement(
+    entityType: SyncEntityType,
+    record: ServerEntityRecord,
+): SqlStatement {
+    const config = entityConfig(entityType);
+
+    return {
+        sql: `
+            UPDATE ${config.table}
+            SET deleted_at = NULL
+            WHERE id = ?
+                AND deleted_at IS NOT NULL
+                AND version < ?
+        `,
+        parameters: [record.id, record.version],
+    };
 }
 
 function acceptedEntityStatement(

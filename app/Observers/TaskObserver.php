@@ -32,9 +32,20 @@ class TaskObserver
             'user_id' => $task->user_id,
             'entity_type' => 'task',
             'entity_id' => $task->id,
-            'operation' => $task->deleted_at ? 'delete' : 'upsert',
+            'operation' => $this->operation($task),
             'version' => $task->version,
             'record' => $task->syncRecord(),
         ]);
+    }
+
+    private function operation(Task $task): string
+    {
+        if ($task->deleted_at !== null) {
+            return 'delete';
+        }
+
+        return $task->wasChanged('deleted_at') && $task->getOriginal('deleted_at') !== null
+            ? 'restore'
+            : 'upsert';
     }
 }

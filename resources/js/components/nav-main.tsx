@@ -1,4 +1,5 @@
 import { Link } from '@inertiajs/react';
+import { toast } from 'sonner';
 import {
     SidebarGroup,
     SidebarGroupLabel,
@@ -11,13 +12,19 @@ import { toUrl } from '@/lib/utils';
 import { useIsOffline } from '@/offline/connection-status';
 import type { NavItem } from '@/types';
 
-export function NavMain({ items = [] }: { items: NavItem[] }) {
+export function NavMain({
+    items = [],
+    label = 'Platform',
+}: {
+    items: NavItem[];
+    label?: string;
+}) {
     const { isCurrentUrl } = useCurrentUrl();
     const isOffline = useIsOffline();
 
     return (
         <SidebarGroup className="px-2 py-0">
-            <SidebarGroupLabel>Platform</SidebarGroupLabel>
+            <SidebarGroupLabel>{label}</SidebarGroupLabel>
             <SidebarMenu>
                 {items.map((item) => (
                     <SidebarMenuItem key={item.title}>
@@ -30,6 +37,15 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                                 href={item.href}
                                 prefetch
                                 onClick={(event) => {
+                                    if (isOffline && item.requiresOnline) {
+                                        event.preventDefault();
+                                        toast.info(
+                                            'This administration page requires an internet connection.',
+                                        );
+
+                                        return;
+                                    }
+
                                     if (
                                         !isOffline ||
                                         event.button !== 0 ||

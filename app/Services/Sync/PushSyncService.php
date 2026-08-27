@@ -20,21 +20,27 @@ class PushSyncService
      */
     public function push(User $user, string $deviceId, array $mutations): array
     {
-        $response = [
-            'accepted' => [],
-            'conflicts' => [],
-            'rejected' => [],
-        ];
+        $accepted = [];
+        $conflicts = [];
+        $rejected = [];
 
         foreach ($mutations as $mutation) {
             $result = $this->processMutation($user, $deviceId, $mutation);
             $status = (string) $result['status'];
             unset($result['status']);
 
-            $response[$status][] = $result;
+            match ($status) {
+                'accepted' => $accepted[] = $result,
+                'conflicts' => $conflicts[] = $result,
+                default => $rejected[] = $result,
+            };
         }
 
-        return $response;
+        return [
+            'accepted' => $accepted,
+            'conflicts' => $conflicts,
+            'rejected' => $rejected,
+        ];
     }
 
     /**
@@ -205,6 +211,7 @@ class PushSyncService
         return match ($entityType) {
             'task' => Task::query()->create($attributes),
             'project' => Project::query()->create($attributes),
+            default => throw new \InvalidArgumentException("Unsupported entity type: {$entityType}"),
         };
     }
 

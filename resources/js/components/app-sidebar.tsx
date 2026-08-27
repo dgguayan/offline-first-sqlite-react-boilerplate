@@ -1,5 +1,15 @@
-import { Link } from '@inertiajs/react';
-import { BookOpen, FolderGit2, FolderKanban, LayoutGrid } from 'lucide-react';
+import { Link, usePage } from '@inertiajs/react';
+import {
+    BookOpen,
+    FolderGit2,
+    FolderKanban,
+    Database,
+    KeyRound,
+    LayoutGrid,
+    ScrollText,
+    ShieldCheck,
+    Users,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -16,18 +26,63 @@ import {
 import { toUrl } from '@/lib/utils';
 import { useIsOffline } from '@/offline/connection-status';
 import { dashboard, projects } from '@/routes';
-import type { NavItem } from '@/types';
+import { index as auditLogs } from '@/routes/admin/audit-logs';
+import { index as permissions } from '@/routes/admin/permissions';
+import { index as roles } from '@/routes/admin/roles';
+import { index as users } from '@/routes/admin/users';
+import { index as workspaceData } from '@/routes/admin/workspace-data';
+import type { Auth, NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+        permission: 'dashboard.view',
     },
     {
         title: 'Projects',
         href: projects(),
         icon: FolderKanban,
+        permission: 'projects.view',
+    },
+];
+
+const administrationNavItems: NavItem[] = [
+    {
+        title: 'Workspace data',
+        href: workspaceData(),
+        icon: Database,
+        permission: 'workspace.view-all',
+        requiresOnline: true,
+    },
+    {
+        title: 'Users',
+        href: users(),
+        icon: Users,
+        permission: 'users.view',
+        requiresOnline: true,
+    },
+    {
+        title: 'Roles',
+        href: roles(),
+        icon: ShieldCheck,
+        permission: 'roles.view',
+        requiresOnline: true,
+    },
+    {
+        title: 'Permissions',
+        href: permissions(),
+        icon: KeyRound,
+        permission: 'permissions.manage',
+        requiresOnline: true,
+    },
+    {
+        title: 'Audit logs',
+        href: auditLogs(),
+        icon: ScrollText,
+        permission: 'audit-logs.view',
+        requiresOnline: true,
     },
 ];
 
@@ -46,6 +101,9 @@ const footerNavItems: NavItem[] = [
 
 export function AppSidebar() {
     const isOffline = useIsOffline();
+    const { auth } = usePage<{ auth: Auth }>().props;
+    const allowed = (item: NavItem) =>
+        !item.permission || item.permission in auth.permissions;
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -73,7 +131,13 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                <NavMain items={mainNavItems.filter(allowed)} />
+                {administrationNavItems.some(allowed) && (
+                    <NavMain
+                        label="Administration"
+                        items={administrationNavItems.filter(allowed)}
+                    />
+                )}
             </SidebarContent>
 
             <SidebarFooter>

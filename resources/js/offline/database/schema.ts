@@ -248,4 +248,46 @@ export const localMigrations: readonly LocalMigration[] = [
             `ALTER TABLE sync_conflicts_v3 RENAME TO sync_conflicts`,
         ],
     },
+    {
+        version: 4,
+        statements: [
+            `
+                UPDATE tasks
+                SET deleted_at = NULL
+                WHERE deleted_at IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM sync_conflicts
+                        WHERE entity_type = 'task'
+                            AND entity_id = tasks.id
+                            AND server_version > tasks.version
+                            AND json_extract(
+                                server_record,
+                                '$.deleted_at'
+                            ) IS NULL
+                    )
+            `,
+            `
+                UPDATE projects
+                SET deleted_at = NULL
+                WHERE deleted_at IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM sync_conflicts
+                        WHERE entity_type = 'project'
+                            AND entity_id = projects.id
+                            AND server_version > projects.version
+                            AND json_extract(
+                                server_record,
+                                '$.deleted_at'
+                            ) IS NULL
+                    )
+            `,
+            `
+                UPDATE sync_metadata
+                SET value = '0', updated_at = CURRENT_TIMESTAMP
+                WHERE key = 'pull_cursor'
+            `,
+        ],
+    },
 ];

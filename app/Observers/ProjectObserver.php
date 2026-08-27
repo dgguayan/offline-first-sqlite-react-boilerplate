@@ -29,9 +29,20 @@ class ProjectObserver
             'user_id' => $project->user_id,
             'entity_type' => 'project',
             'entity_id' => $project->id,
-            'operation' => $project->deleted_at ? 'delete' : 'upsert',
+            'operation' => $this->operation($project),
             'version' => $project->version,
             'record' => $project->syncRecord(),
         ]);
+    }
+
+    private function operation(Project $project): string
+    {
+        if ($project->deleted_at !== null) {
+            return 'delete';
+        }
+
+        return $project->wasChanged('deleted_at') && $project->getOriginal('deleted_at') !== null
+            ? 'restore'
+            : 'upsert';
     }
 }

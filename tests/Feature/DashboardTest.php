@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use Database\Seeders\RbacSeeder;
 
 test('guests are redirected to the login page', function () {
     $response = $this->get(route('dashboard'));
@@ -9,6 +10,7 @@ test('guests are redirected to the login page', function () {
 
 test('authenticated users can visit the dashboard', function () {
     $user = User::factory()->create();
+    $this->seed(RbacSeeder::class);
     $this->actingAs($user);
 
     $response = $this->get(route('dashboard'));

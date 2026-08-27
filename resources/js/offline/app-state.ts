@@ -1,9 +1,10 @@
-import type { User } from '@/types';
+import type { PermissionScope, User } from '@/types';
 
 export type OfflineAppState = {
     name: string;
     user: User;
     sidebarOpen: boolean;
+    permissions?: Record<string, PermissionScope>;
 };
 
 const storageKeyPrefix = 'offline-first-tasks.app-state.';

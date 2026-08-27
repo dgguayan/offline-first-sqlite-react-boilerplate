@@ -1,3 +1,5 @@
+import type { PermissionScope } from './admin';
+
 export type User = {
     id: number;
     name: string;
@@ -12,6 +14,8 @@ export type User = {
 
 export type Auth = {
     user: User;
+    permissions: Record<string, PermissionScope>;
+    roles: string[];
 };
 
 export type Passkey = {
