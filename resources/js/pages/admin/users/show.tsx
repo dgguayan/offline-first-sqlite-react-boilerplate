@@ -97,7 +97,9 @@ export default function ShowUser({
                                     : 'destructive'
                             }
                         >
-                            {managedUser.status}
+                            {managedUser.status === 'pending'
+                                ? 'pending verification'
+                                : managedUser.status}
                         </Badge>
                     </Metadata>
                     <Metadata
@@ -242,7 +244,7 @@ export default function ShowUser({
                                                 )
                                             }
                                         />
-                                    ) : (
+                                    ) : managedUser.status === 'inactive' ? (
                                         <ConfirmActionDialog
                                             trigger={
                                                 <Button variant="outline">
@@ -258,7 +260,7 @@ export default function ShowUser({
                                                 )
                                             }
                                         />
-                                    ))}
+                                    ) : null)}
                                 {managedUser.can.reset_password && (
                                     <ConfirmActionDialog
                                         trigger={

@@ -93,6 +93,10 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                             <option value="">All statuses</option>
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
+                            <option value="pending">
+                                Pending verification
+                            </option>
+                            <option value="declined">Declined</option>
                         </select>
                         <select
                             value={filters.role ?? ''}
@@ -172,10 +176,15 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                                                 variant={
                                                     user.status === 'active'
                                                         ? 'secondary'
-                                                        : 'destructive'
+                                                        : user.status ===
+                                                            'pending'
+                                                          ? 'outline'
+                                                          : 'destructive'
                                                 }
                                             >
-                                                {user.status}
+                                                {user.status === 'pending'
+                                                    ? 'pending verification'
+                                                    : user.status}
                                             </Badge>
                                         </td>
                                         <td className="px-4 py-4 text-muted-foreground">

@@ -35,6 +35,7 @@ class RbacSeeder extends Seeder
                 ['name' => 'Delete users', 'slug' => 'users.delete', 'action' => 'delete', 'scopes' => ['all', 'department']],
                 ['name' => 'Reset user passwords', 'slug' => 'users.reset-password', 'action' => 'reset-password', 'scopes' => ['all', 'department']],
                 ['name' => 'Assign user roles', 'slug' => 'users.assign-roles', 'action' => 'assign-roles', 'scopes' => ['all', 'department']],
+                ['name' => 'Verify registrations', 'slug' => 'users.verify-registrations', 'action' => 'verify-registrations', 'scopes' => ['all']],
             ]],
             ['name' => 'Roles', 'slug' => 'roles', 'description' => 'Roles and their effective permission grants.', 'permissions' => [
                 ['name' => 'View roles', 'slug' => 'roles.view', 'action' => 'view', 'scopes' => ['all']],
@@ -50,6 +51,7 @@ class RbacSeeder extends Seeder
             ]],
             ['name' => 'Settings', 'slug' => 'settings', 'description' => 'Global application configuration and system branding.', 'permissions' => [
                 ['name' => 'Manage system branding', 'slug' => 'settings.manage-branding', 'action' => 'manage-branding', 'scopes' => ['all']],
+                ['name' => 'Manage registration settings', 'slug' => 'settings.manage-registration', 'action' => 'manage-registration', 'scopes' => ['all']],
             ]],
         ];
 

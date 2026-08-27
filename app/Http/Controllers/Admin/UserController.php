@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -71,6 +72,9 @@ class UserController extends Controller
     {
         $data = $request->validated();
         $data['deactivated_at'] = $data['status'] === 'inactive' ? now() : null;
+        $data['registration_source'] = User::RegistrationSourceAdmin;
+        $data['approved_at'] = now();
+        $data['approved_by'] = $request->user()->id;
 
         $user = DB::transaction(function () use ($request, $data): User {
             $user = User::query()->create($data);
@@ -139,8 +143,15 @@ class UserController extends Controller
     public function activate(Request $request, User $user): RedirectResponse
     {
         Gate::authorize('deactivate', $user);
+
+        if ($user->status !== User::StatusInactive) {
+            throw ValidationException::withMessages([
+                'status' => 'Only deactivated accounts can be activated here. Pending registrations must use the approval workflow.',
+            ]);
+        }
+
         $before = ['status' => $user->status, 'deactivated_at' => $user->deactivated_at?->toISOString()];
-        $user->update(['status' => 'active', 'deactivated_at' => null]);
+        $user->update(['status' => User::StatusActive, 'deactivated_at' => null]);
         $this->auditLogger->record($request->user(), 'user.activated', $user, $before, ['status' => 'active', 'deactivated_at' => null]);
         Inertia::flash('toast', ['type' => 'success', 'message' => 'User activated.']);
 
@@ -150,10 +161,15 @@ class UserController extends Controller
     public function deactivate(Request $request, User $user): RedirectResponse
     {
         Gate::authorize('deactivate', $user);
+
+        if (! $user->isActive()) {
+            throw ValidationException::withMessages(['status' => 'Only active accounts can be deactivated.']);
+        }
+
         $before = ['status' => $user->status, 'deactivated_at' => $user->deactivated_at?->toISOString()];
 
         DB::transaction(function () use ($request, $user, $before): void {
-            $user->update(['status' => 'inactive', 'deactivated_at' => now()]);
+            $user->update(['status' => User::StatusInactive, 'deactivated_at' => now()]);
             DB::table('sessions')->where('user_id', $user->id)->delete();
             $this->auditLogger->record($request->user(), 'user.deactivated', $user, $before, ['status' => 'inactive', 'deactivated_at' => $user->deactivated_at?->toISOString()]);
         });
@@ -165,6 +181,12 @@ class UserController extends Controller
 
     public function updateRoles(UpdateUserRolesRequest $request, User $user): RedirectResponse
     {
+        if (in_array($user->status, [User::StatusPending, User::StatusDeclined], true)) {
+            throw ValidationException::withMessages([
+                'assignments' => 'Roles cannot be assigned until a pending registration is approved.',
+            ]);
+        }
+
         $actor = $request->user();
         $assignments = collect($request->assignments());
         $roles = Role::query()->whereIn('id', $assignments->pluck('role_id'))->with('permissions')->get()->keyBy('id');
@@ -226,6 +248,11 @@ class UserController extends Controller
             'bio' => $includeProfile ? $user->bio : null,
             'last_login_at' => $user->last_login_at?->toISOString(),
             'deactivated_at' => $user->deactivated_at?->toISOString(),
+            'registration_source' => $user->registration_source,
+            'verification_expires_at' => $user->verification_expires_at?->toISOString(),
+            'approved_at' => $user->approved_at?->toISOString(),
+            'declined_at' => $user->declined_at?->toISOString(),
+            'decline_reason' => $user->decline_reason,
             'created_at' => $user->created_at?->toISOString(),
             'updated_at' => $user->updated_at?->toISOString(),
             'roles' => $user->roles->map(fn (Role $role): array => ['id' => $role->id, 'name' => $role->name, 'slug' => $role->slug, 'expires_at' => $role->assignmentExpiresAt()?->toISOString()])->values(),
@@ -233,9 +260,12 @@ class UserController extends Controller
                 'view' => $actor->can('view', $user),
                 'update' => $actor->can('update', $user),
                 'delete' => $actor->can('delete', $user),
-                'deactivate' => $actor->can('deactivate', $user),
-                'reset_password' => $actor->can('resetPassword', $user),
-                'assign_roles' => $actor->can('assignRoles', $user),
+                'deactivate' => $actor->can('deactivate', $user)
+                    && in_array($user->status, [User::StatusActive, User::StatusInactive], true),
+                'reset_password' => $actor->can('resetPassword', $user)
+                    && ! in_array($user->status, [User::StatusPending, User::StatusDeclined], true),
+                'assign_roles' => $actor->can('assignRoles', $user)
+                    && ! in_array($user->status, [User::StatusPending, User::StatusDeclined], true),
             ],
         ];
     }
@@ -269,6 +299,22 @@ class UserController extends Controller
     /** @return array<string, mixed> */
     private function auditableUserValues(User $user): array
     {
-        return $user->only(['name', 'username', 'email', 'status', 'job_title', 'department', 'phone', 'bio']);
+        return $user->only([
+            'name',
+            'username',
+            'email',
+            'status',
+            'registration_source',
+            'job_title',
+            'department',
+            'phone',
+            'bio',
+            'verification_expires_at',
+            'approved_at',
+            'approved_by',
+            'declined_at',
+            'declined_by',
+            'decline_reason',
+        ]);
     }
 }

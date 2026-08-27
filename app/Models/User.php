@@ -24,12 +24,19 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string $status
+ * @property string $registration_source
  * @property string|null $job_title
  * @property string|null $department
  * @property string|null $phone
  * @property string|null $bio
  * @property Carbon|null $last_login_at
  * @property Carbon|null $deactivated_at
+ * @property Carbon|null $verification_expires_at
+ * @property Carbon|null $approved_at
+ * @property int|null $approved_by
+ * @property Carbon|null $declined_at
+ * @property int|null $declined_by
+ * @property string|null $decline_reason
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -37,12 +44,24 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'username', 'email', 'password', 'status', 'job_title', 'department', 'phone', 'bio', 'last_login_at', 'deactivated_at'])]
+#[Fillable(['name', 'username', 'email', 'password', 'status', 'registration_source', 'job_title', 'department', 'phone', 'bio', 'last_login_at', 'deactivated_at', 'verification_expires_at', 'approved_at', 'approved_by', 'declined_at', 'declined_by', 'decline_reason'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+    public const StatusActive = 'active';
+
+    public const StatusInactive = 'inactive';
+
+    public const StatusPending = 'pending';
+
+    public const StatusDeclined = 'declined';
+
+    public const RegistrationSourceAdmin = 'admin';
+
+    public const RegistrationSourceSelf = 'self';
 
     /** @var array<string, string>|null */
     private ?array $resolvedPermissionScopes = null;
@@ -116,7 +135,19 @@ class User extends Authenticatable implements PasskeyUser
 
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === self::StatusActive;
+    }
+
+    public function isPendingVerification(): bool
+    {
+        return $this->status === self::StatusPending;
+    }
+
+    public function hasPendingVerificationExpired(): bool
+    {
+        return $this->isPendingVerification()
+            && $this->verification_expires_at !== null
+            && $this->verification_expires_at->isPast();
     }
 
     /**
@@ -132,6 +163,9 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'last_login_at' => 'datetime',
             'deactivated_at' => 'datetime',
+            'verification_expires_at' => 'datetime',
+            'approved_at' => 'datetime',
+            'declined_at' => 'datetime',
         ];
     }
 }

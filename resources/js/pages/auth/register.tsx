@@ -97,7 +97,7 @@ export default function Register({ passwordRules }: Props) {
                                 data-test="register-user-button"
                             >
                                 {processing && <Spinner />}
-                                Create account
+                                Submit registration
                             </Button>
                         </div>
 
@@ -115,6 +115,7 @@ export default function Register({ passwordRules }: Props) {
 }
 
 Register.layout = {
-    title: 'Create an account',
-    description: 'Enter your details below to create your account',
+    title: 'Request an account',
+    description:
+        'Submit your details for administrator review. You can sign in only after approval.',
 };

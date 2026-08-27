@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Services\BrandingService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -49,6 +50,12 @@ class HandleInertiaRequests extends Middleware
                     ->where('roles.is_active', true)
                     ->pluck('roles.name')
                     ->all() ?? [],
+                'pending_registration_count' => fn (): int => $request->user()?->hasPermissionTo('users.verify-registrations')
+                    ? User::query()
+                        ->where('registration_source', User::RegistrationSourceSelf)
+                        ->where('status', User::StatusPending)
+                        ->count()
+                    : 0,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

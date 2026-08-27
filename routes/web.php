@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\PermissionCatalogController;
+use App\Http\Controllers\Admin\RegistrationVerificationController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WorkspaceDataController;
@@ -21,6 +22,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('users/{user}/deactivate', [UserController::class, 'deactivate'])->name('users.deactivate');
         Route::put('users/{user}/roles', [UserController::class, 'updateRoles'])->name('users.roles.update');
         Route::post('users/{user}/password-reset', [UserController::class, 'sendPasswordReset'])->name('users.password-reset');
+
+        Route::controller(RegistrationVerificationController::class)
+            ->prefix('registrations')
+            ->name('registrations.')
+            ->middleware('can:users.verify-registrations')
+            ->group(function (): void {
+                Route::get('/', 'index')->name('index');
+                Route::patch('{user}/approve', 'approve')->name('approve');
+                Route::patch('{user}/decline', 'decline')->name('decline');
+            });
+        Route::put('registration-settings', [RegistrationVerificationController::class, 'updateSetting'])
+            ->middleware('can:settings.manage-registration')
+            ->name('registration-settings.update');
 
         Route::resource('roles', RoleController::class);
 

@@ -17,11 +17,22 @@ class EnsureUserIsActive
     public function handle(Request $request, Closure $next): Response
     {
         if ($request->user() !== null && ! $request->user()->isActive()) {
+            $status = $request->user()->status;
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            abort(403, 'This account has been deactivated.');
+            $message = match ($status) {
+                'pending' => 'Your registration is still pending administrator approval.',
+                'declined' => 'Your registration was declined and cannot access the system.',
+                default => 'This account has been deactivated.',
+            };
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => $message], 403);
+            }
+
+            return to_route('login')->with('status', $message);
         }
 
         return $next($request);

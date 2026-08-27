@@ -13,4 +13,6 @@ export type NavItem = {
     isActive?: boolean;
     permission?: string;
     requiresOnline?: boolean;
+    badge?: number | string;
+    badgeLabel?: string;
 };

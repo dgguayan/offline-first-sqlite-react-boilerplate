@@ -4,6 +4,7 @@ import {
     SidebarGroup,
     SidebarGroupLabel,
     SidebarMenu,
+    SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
@@ -65,6 +66,16 @@ export function NavMain({
                                 <span>{item.title}</span>
                             </Link>
                         </SidebarMenuButton>
+                        {item.badge !== undefined && (
+                            <SidebarMenuBadge
+                                role="status"
+                                aria-label={item.badgeLabel}
+                                title={item.badgeLabel}
+                                className="bg-sidebar-primary text-sidebar-primary-foreground ring-1 ring-sidebar-border group-data-[collapsible=icon]:top-0 group-data-[collapsible=icon]:right-0 group-data-[collapsible=icon]:flex! group-data-[collapsible=icon]:h-4 group-data-[collapsible=icon]:min-w-4 group-data-[collapsible=icon]:px-0.5 group-data-[collapsible=icon]:text-[10px]"
+                            >
+                                {item.badge}
+                            </SidebarMenuBadge>
+                        )}
                     </SidebarMenuItem>
                 ))}
             </SidebarMenu>

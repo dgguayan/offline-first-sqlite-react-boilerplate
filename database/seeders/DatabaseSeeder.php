@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call(BrandingSettingSeeder::class);
+        $this->call(RegistrationSettingSeeder::class);
         $this->call(RbacSeeder::class);
     }
 }

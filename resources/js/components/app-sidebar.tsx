@@ -8,6 +8,7 @@ import {
     LayoutGrid,
     ScrollText,
     ShieldCheck,
+    UserRoundCheck,
     Users,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
@@ -30,6 +31,7 @@ import { useIsOffline } from '@/offline/connection-status';
 import { dashboard, projects } from '@/routes';
 import { index as auditLogs } from '@/routes/admin/audit-logs';
 import { index as permissions } from '@/routes/admin/permissions';
+import { index as registrations } from '@/routes/admin/registrations';
 import { index as roles } from '@/routes/admin/roles';
 import { index as users } from '@/routes/admin/users';
 import { index as workspaceData } from '@/routes/admin/workspace-data';
@@ -63,6 +65,13 @@ const administrationNavItems: NavItem[] = [
         href: users(),
         icon: Users,
         permission: 'users.view',
+        requiresOnline: true,
+    },
+    {
+        title: 'Registration verification',
+        href: registrations(),
+        icon: UserRoundCheck,
+        permission: 'users.verify-registrations',
         requiresOnline: true,
     },
     {
@@ -106,6 +115,24 @@ export function AppSidebar() {
     const { auth, branding } = usePage().props;
     const allowed = (item: NavItem) =>
         !item.permission || item.permission in auth.permissions;
+    const allowedAdministrationItems = administrationNavItems
+        .filter(allowed)
+        .map((item): NavItem => {
+            if (
+                item.permission !== 'users.verify-registrations' ||
+                auth.pending_registration_count < 1
+            ) {
+                return item;
+            }
+
+            const pendingCount = auth.pending_registration_count;
+
+            return {
+                ...item,
+                badge: pendingCount > 99 ? '99+' : pendingCount,
+                badgeLabel: `${pendingCount} pending registration${pendingCount === 1 ? '' : 's'}`,
+            };
+        });
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -151,10 +178,10 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems.filter(allowed)} />
-                {administrationNavItems.some(allowed) && (
+                {allowedAdministrationItems.length > 0 && (
                     <NavMain
                         label="Administration"
-                        items={administrationNavItems.filter(allowed)}
+                        items={allowedAdministrationItems}
                     />
                 )}
             </SidebarContent>

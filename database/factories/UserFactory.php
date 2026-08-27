@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\RegistrationSetting;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -30,13 +31,20 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
-            'status' => 'active',
+            'status' => User::StatusActive,
+            'registration_source' => User::RegistrationSourceAdmin,
             'job_title' => fake()->jobTitle(),
             'department' => fake()->randomElement(['Operations', 'Finance', 'Technology']),
             'phone' => fake()->phoneNumber(),
             'bio' => fake()->optional()->sentence(),
             'last_login_at' => null,
             'deactivated_at' => null,
+            'verification_expires_at' => null,
+            'approved_at' => now(),
+            'approved_by' => null,
+            'declined_at' => null,
+            'declined_by' => null,
+            'decline_reason' => null,
             'remember_token' => Str::random(10),
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
@@ -51,6 +59,20 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    public function pendingVerification(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => User::StatusPending,
+            'registration_source' => User::RegistrationSourceSelf,
+            'verification_expires_at' => now()->addDays(RegistrationSetting::DefaultPendingExpirationDays),
+            'approved_at' => null,
+            'approved_by' => null,
+            'declined_at' => null,
+            'declined_by' => null,
+            'decline_reason' => null,
         ]);
     }
 

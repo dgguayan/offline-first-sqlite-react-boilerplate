@@ -16,6 +16,7 @@ export type Auth = {
     user: User;
     permissions: Record<string, PermissionScope>;
     roles: string[];
+    pending_registration_count: number;
 };
 
 export type Passkey = {
