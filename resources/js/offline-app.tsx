@@ -23,8 +23,8 @@ import SettingsLayout from '@/layouts/settings/layout';
 import { getOfflineAppState } from '@/offline/app-state';
 import { getActiveOfflineUser } from '@/offline/database/database';
 import { dashboard, projects } from '@/routes';
-import type { User } from '@/types';
-import type { PermissionScope } from '@/types';
+import { defaultSidebarLogoSize } from '@/types';
+import type { Branding, PermissionScope, User } from '@/types';
 import '../css/app.css';
 
 const rootElement = document.getElementById('offline-app');
@@ -36,8 +36,20 @@ if (!rootElement) {
 const userScope = getActiveOfflineUser();
 const rememberedState = getOfflineAppState(userScope);
 const isProjectsPage = /^\/projects(?:\/|$)/.test(window.location.pathname);
-const appName =
-    rememberedState?.name ?? import.meta.env.VITE_APP_NAME ?? 'Laravel';
+const branding: Branding = rememberedState?.branding ?? {
+    systemName:
+        rememberedState?.name ?? import.meta.env.VITE_APP_NAME ?? 'Laravel',
+    logoUrl: null,
+    layout: 'horizontal',
+    titleAlignment: 'left',
+    titleOverflow: 'ellipsis',
+    sidebarLogoSize: defaultSidebarLogoSize,
+    usesCustomLogo: false,
+    isDefault: true,
+    defaultSystemName: import.meta.env.VITE_APP_NAME ?? 'Laravel',
+    updatedAt: null,
+};
+const appName = branding.systemName;
 const user = rememberedState?.user ?? fallbackUser(userScope);
 const pages = import.meta.glob<{ default: ResolvedComponent }>(
     './pages/**/*.tsx',
@@ -45,6 +57,7 @@ const pages = import.meta.glob<{ default: ResolvedComponent }>(
 
 const initialPage: Page<{
     name: string;
+    branding: Branding;
     auth: {
         user: User;
         permissions: Record<string, PermissionScope>;
@@ -55,6 +68,7 @@ const initialPage: Page<{
     component: isProjectsPage ? 'project' : 'dashboard',
     props: {
         name: appName,
+        branding,
         auth: {
             user,
             permissions: rememberedState?.permissions ?? {},

@@ -5,7 +5,7 @@ import { rememberOfflineAppState } from '@/offline/app-state';
 import { projects } from '@/routes';
 
 export default function Projects() {
-    const { auth, name, sidebarOpen } = usePage().props;
+    const { auth, branding, name, sidebarOpen } = usePage().props;
 
     useEffect(() => {
         rememberOfflineAppState({
@@ -13,8 +13,9 @@ export default function Projects() {
             user: auth.user,
             sidebarOpen,
             permissions: auth.permissions,
+            branding,
         });
-    }, [auth.permissions, auth.user, name, sidebarOpen]);
+    }, [auth.permissions, auth.user, branding, name, sidebarOpen]);
 
     return (
         <>

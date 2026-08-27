@@ -5,7 +5,7 @@ import { rememberOfflineAppState } from '@/offline/app-state';
 import { dashboard } from '@/routes';
 
 export default function Dashboard() {
-    const { auth, name, sidebarOpen } = usePage().props;
+    const { auth, branding, name, sidebarOpen } = usePage().props;
 
     useEffect(() => {
         rememberOfflineAppState({
@@ -13,8 +13,9 @@ export default function Dashboard() {
             user: auth.user,
             sidebarOpen,
             permissions: auth.permissions,
+            branding,
         });
-    }, [auth.permissions, auth.user, name, sidebarOpen]);
+    }, [auth.permissions, auth.user, branding, name, sidebarOpen]);
 
     return (
         <>

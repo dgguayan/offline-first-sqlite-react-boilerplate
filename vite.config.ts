@@ -61,7 +61,24 @@ export default defineConfig({
                     /^\/(?:forgot-password|reset-password)(?:\/|$)/,
                     /^\/(?:settings|verification|two-factor)(?:\/|$)/,
                 ],
-                runtimeCaching: [],
+                runtimeCaching: [
+                    {
+                        urlPattern: ({ url }) =>
+                            url.origin === self.location.origin &&
+                            url.pathname.startsWith('/storage/branding/'),
+                        handler: 'StaleWhileRevalidate',
+                        options: {
+                            cacheName: 'branding-assets',
+                            cacheableResponse: {
+                                statuses: [0, 200],
+                            },
+                            expiration: {
+                                maxEntries: 10,
+                                maxAgeSeconds: 60 * 60 * 24 * 30,
+                            },
+                        },
+                    },
+                ],
             },
         }),
     ],

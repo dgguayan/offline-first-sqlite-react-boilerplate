@@ -48,6 +48,9 @@ class RbacSeeder extends Seeder
             ['name' => 'Audit logs', 'slug' => 'audit-logs', 'description' => 'Immutable security and administration activity.', 'permissions' => [
                 ['name' => 'View audit logs', 'slug' => 'audit-logs.view', 'action' => 'view', 'scopes' => ['all']],
             ]],
+            ['name' => 'Settings', 'slug' => 'settings', 'description' => 'Global application configuration and system branding.', 'permissions' => [
+                ['name' => 'Manage system branding', 'slug' => 'settings.manage-branding', 'action' => 'manage-branding', 'scopes' => ['all']],
+            ]],
         ];
 
         DB::transaction(function () use ($catalog): void {

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
+        $this->call(BrandingSettingSeeder::class);
         $this->call(RbacSeeder::class);
     }
 }

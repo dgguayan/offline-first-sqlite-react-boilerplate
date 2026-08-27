@@ -1,9 +1,14 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import AppearanceTabs from '@/components/appearance-tabs';
 import Heading from '@/components/heading';
+import { SystemBrandingSettings } from '@/components/system-branding-settings';
+import { Separator } from '@/components/ui/separator';
 import { edit as editAppearance } from '@/routes/appearance';
 
 export default function Appearance() {
+    const { auth, branding } = usePage().props;
+    const canManageBranding = 'settings.manage-branding' in auth.permissions;
+
     return (
         <>
             <Head title="Appearance settings" />
@@ -17,6 +22,16 @@ export default function Appearance() {
                     description="Update the appearance settings for your account"
                 />
                 <AppearanceTabs />
+
+                {canManageBranding && (
+                    <>
+                        <Separator />
+                        <SystemBrandingSettings
+                            key={branding.updatedAt ?? 'default'}
+                            branding={branding}
+                        />
+                    </>
+                )}
             </div>
         </>
     );

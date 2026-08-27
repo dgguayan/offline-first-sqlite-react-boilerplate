@@ -1,10 +1,22 @@
-import type { PermissionScope, User } from '@/types';
+import {
+    defaultSidebarLogoSize,
+    maximumSidebarLogoSize,
+    minimumSidebarLogoSize,
+} from '@/types';
+import type {
+    Branding,
+    BrandingTitleAlignment,
+    BrandingTitleOverflow,
+    PermissionScope,
+    User,
+} from '@/types';
 
 export type OfflineAppState = {
     name: string;
     user: User;
     sidebarOpen: boolean;
     permissions?: Record<string, PermissionScope>;
+    branding?: Branding;
 };
 
 const storageKeyPrefix = 'offline-first-tasks.app-state.';
@@ -48,13 +60,46 @@ export function getOfflineAppState(
             !state.user ||
             String(state.user.id) !== userScope ||
             typeof state.user.name !== 'string' ||
-            typeof state.user.email !== 'string'
+            typeof state.user.email !== 'string' ||
+            (state.branding !== undefined &&
+                (typeof state.branding.systemName !== 'string' ||
+                    typeof state.branding.layout !== 'string' ||
+                    typeof state.branding.usesCustomLogo !== 'boolean'))
         ) {
             return null;
+        }
+
+        if (state.branding) {
+            state.branding.titleAlignment = normalizeTitleAlignment(
+                state.branding.titleAlignment,
+            );
+            state.branding.titleOverflow = normalizeTitleOverflow(
+                state.branding.titleOverflow,
+            );
+            state.branding.sidebarLogoSize = normalizeSidebarLogoSize(
+                state.branding.sidebarLogoSize,
+            );
         }
 
         return state as OfflineAppState;
     } catch {
         return null;
     }
+}
+
+function normalizeTitleAlignment(value: unknown): BrandingTitleAlignment {
+    return value === 'center' || value === 'right' ? value : 'left';
+}
+
+function normalizeTitleOverflow(value: unknown): BrandingTitleOverflow {
+    return value === 'clip' || value === 'wrap' ? value : 'ellipsis';
+}
+
+function normalizeSidebarLogoSize(value: unknown): number {
+    return typeof value === 'number' &&
+        Number.isInteger(value) &&
+        value >= minimumSidebarLogoSize &&
+        value <= maximumSidebarLogoSize
+        ? value
+        : defaultSidebarLogoSize;
 }

@@ -10,6 +10,7 @@ import {
     ShieldCheck,
     Users,
 } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -23,6 +24,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { clampSidebarLogoSize } from '@/lib/branding';
 import { toUrl } from '@/lib/utils';
 import { useIsOffline } from '@/offline/connection-status';
 import { dashboard, projects } from '@/routes';
@@ -31,7 +33,7 @@ import { index as permissions } from '@/routes/admin/permissions';
 import { index as roles } from '@/routes/admin/roles';
 import { index as users } from '@/routes/admin/users';
 import { index as workspaceData } from '@/routes/admin/workspace-data';
-import type { Auth, NavItem } from '@/types';
+import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
     {
@@ -101,7 +103,7 @@ const footerNavItems: NavItem[] = [
 
 export function AppSidebar() {
     const isOffline = useIsOffline();
-    const { auth } = usePage<{ auth: Auth }>().props;
+    const { auth, branding } = usePage().props;
     const allowed = (item: NavItem) =>
         !item.permission || item.permission in auth.permissions;
 
@@ -110,7 +112,24 @@ export function AppSidebar() {
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
+                        <SidebarMenuButton
+                            size="lg"
+                            asChild
+                            className="h-auto min-h-[var(--sidebar-brand-min-height)] py-2 group-data-[collapsible=icon]:min-h-12!"
+                            style={
+                                {
+                                    '--sidebar-brand-min-height': `${Math.max(
+                                        branding.layout === 'vertical' ||
+                                            branding.titleOverflow === 'wrap'
+                                            ? 64
+                                            : 48,
+                                        clampSidebarLogoSize(
+                                            branding.sidebarLogoSize,
+                                        ) + 16,
+                                    )}px`,
+                                } as CSSProperties
+                            }
+                        >
                             <Link
                                 href={dashboard()}
                                 prefetch
@@ -123,7 +142,7 @@ export function AppSidebar() {
                                     window.location.assign(toUrl(dashboard()));
                                 }}
                             >
-                                <AppLogo />
+                                <AppLogo sidebar />
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>
