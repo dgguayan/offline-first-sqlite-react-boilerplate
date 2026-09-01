@@ -81,6 +81,17 @@ export function getOfflineAppState(
             );
         }
 
+        if (
+            state.permissions &&
+            !('tasks.view' in state.permissions) &&
+            'dashboard.view' in state.permissions
+        ) {
+            state.permissions = {
+                ...state.permissions,
+                'tasks.view': 'own',
+            };
+        }
+
         return state as OfflineAppState;
     } catch {
         return null;

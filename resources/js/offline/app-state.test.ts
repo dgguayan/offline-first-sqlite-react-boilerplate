@@ -91,4 +91,27 @@ describe('offline app state', () => {
             sidebarLogoSize: 32,
         });
     });
+
+    it('preserves task access in state cached before tasks had their own permission', () => {
+        values.set(
+            'offline-first-tasks.app-state.42',
+            JSON.stringify({
+                name: 'Older Offline Tasks',
+                user: {
+                    id: 42,
+                    name: 'Local User',
+                    email: 'local@example.com',
+                },
+                sidebarOpen: true,
+                permissions: {
+                    'dashboard.view': 'all',
+                },
+            }),
+        );
+
+        expect(getOfflineAppState('42')?.permissions).toEqual({
+            'dashboard.view': 'all',
+            'tasks.view': 'own',
+        });
+    });
 });

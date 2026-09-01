@@ -6,6 +6,7 @@ import {
     Database,
     KeyRound,
     LayoutGrid,
+    ListTodo,
     ScrollText,
     ShieldCheck,
     UserRoundCheck,
@@ -28,7 +29,7 @@ import {
 import { clampSidebarLogoSize } from '@/lib/branding';
 import { toUrl } from '@/lib/utils';
 import { useIsOffline } from '@/offline/connection-status';
-import { dashboard, projects } from '@/routes';
+import { dashboard, projects, tasks } from '@/routes';
 import { index as auditLogs } from '@/routes/admin/audit-logs';
 import { index as permissions } from '@/routes/admin/permissions';
 import { index as registrations } from '@/routes/admin/registrations';
@@ -43,6 +44,12 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
         permission: 'dashboard.view',
+    },
+    {
+        title: 'Offline-first Tasks',
+        href: tasks(),
+        icon: ListTodo,
+        permission: 'tasks.view',
     },
     {
         title: 'Projects',

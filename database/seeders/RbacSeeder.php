@@ -22,6 +22,7 @@ class RbacSeeder extends Seeder
         $catalog = [
             ['name' => 'Workspace', 'slug' => 'workspace', 'description' => 'Core application pages.', 'permissions' => [
                 ['name' => 'View dashboard', 'slug' => 'dashboard.view', 'action' => 'view', 'scopes' => ['all']],
+                ['name' => 'View tasks', 'slug' => 'tasks.view', 'action' => 'view', 'scopes' => ['own']],
                 ['name' => 'View projects', 'slug' => 'projects.view', 'action' => 'view', 'scopes' => ['own']],
                 ['name' => 'View all workspace data', 'slug' => 'workspace.view-all', 'action' => 'view-all', 'scopes' => ['all']],
                 ['name' => 'Archive any workspace data', 'slug' => 'workspace.archive-any', 'action' => 'archive-any', 'scopes' => ['all']],
@@ -99,10 +100,10 @@ class RbacSeeder extends Seeder
                 ['name' => 'General User', 'description' => 'Default access for newly registered accounts.', 'is_active' => true, 'is_default' => true],
             );
             if ($defaultRole->wasRecentlyCreated) {
-                $defaultPermissions = Permission::query()->whereIn('slug', ['dashboard.view', 'projects.view'])->get();
+                $defaultPermissions = Permission::query()->whereIn('slug', ['dashboard.view', 'tasks.view', 'projects.view'])->get();
                 $defaultRole->permissions()->sync(
                     $defaultPermissions->mapWithKeys(fn (Permission $permission): array => [
-                        $permission->id => ['scope' => $permission->slug === 'projects.view' ? 'own' : 'all'],
+                        $permission->id => ['scope' => $permission->slug === 'dashboard.view' ? 'all' : 'own'],
                     ]),
                 );
             }

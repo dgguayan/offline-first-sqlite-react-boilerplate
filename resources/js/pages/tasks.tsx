@@ -1,18 +1,18 @@
 import { Head, usePage } from '@inertiajs/react';
-import { ProjectWorkspace } from '@/components/project-workspace';
+import { TaskWorkspace } from '@/components/task-workspace';
 import { useRememberOfflineAppState } from '@/hooks/use-remember-offline-app-state';
-import { projects } from '@/routes';
+import { tasks } from '@/routes';
 
-export default function Projects() {
+export default function Tasks() {
     const { auth } = usePage().props;
 
     useRememberOfflineAppState();
 
     return (
         <>
-            <Head title="Projects" />
+            <Head title="Offline-first Tasks" />
             <div className="flex h-full flex-1 flex-col overflow-x-auto rounded-xl p-4">
-                <ProjectWorkspace
+                <TaskWorkspace
                     userScope={String(auth.user.id)}
                     rememberUserScope
                 />
@@ -21,11 +21,11 @@ export default function Projects() {
     );
 }
 
-Projects.layout = {
+Tasks.layout = {
     breadcrumbs: [
         {
-            title: 'Projects',
-            href: projects(),
+            title: 'Offline-first Tasks',
+            href: tasks(),
         },
     ],
 };

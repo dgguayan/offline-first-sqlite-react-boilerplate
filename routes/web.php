@@ -14,6 +14,8 @@ Route::inertia('/', 'welcome')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->middleware('can:dashboard.view')->name('dashboard');
 
+    Route::inertia('tasks', 'tasks')->middleware('can:tasks.view')->name('tasks');
+
     Route::inertia('projects', 'project')->middleware('can:projects.view')->name('projects');
 
     Route::prefix('admin')->name('admin.')->group(function () {

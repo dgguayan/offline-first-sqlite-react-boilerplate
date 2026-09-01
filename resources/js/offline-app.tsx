@@ -22,7 +22,8 @@ import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import { getOfflineAppState } from '@/offline/app-state';
 import { getActiveOfflineUser } from '@/offline/database/database';
-import { dashboard, projects } from '@/routes';
+import Dashboard from '@/pages/dashboard';
+import { projects, tasks } from '@/routes';
 import { defaultSidebarLogoSize } from '@/types';
 import type { Branding, PermissionScope, User } from '@/types';
 import '../css/app.css';
@@ -36,6 +37,12 @@ if (!rootElement) {
 const userScope = getActiveOfflineUser();
 const rememberedState = getOfflineAppState(userScope);
 const isProjectsPage = /^\/projects(?:\/|$)/.test(window.location.pathname);
+const isTasksPage = /^\/tasks(?:\/|$)/.test(window.location.pathname);
+const offlinePageName = isProjectsPage
+    ? 'project'
+    : isTasksPage
+      ? 'tasks'
+      : 'dashboard';
 const branding: Branding = rememberedState?.branding ?? {
     systemName:
         rememberedState?.name ?? import.meta.env.VITE_APP_NAME ?? 'Laravel',
@@ -62,10 +69,11 @@ const initialPage: Page<{
         user: User;
         permissions: Record<string, PermissionScope>;
         roles: string[];
+        pending_registration_count: number;
     };
     sidebarOpen: boolean;
 }> = {
-    component: isProjectsPage ? 'project' : 'dashboard',
+    component: offlinePageName,
     props: {
         name: appName,
         branding,
@@ -73,6 +81,7 @@ const initialPage: Page<{
             user,
             permissions: rememberedState?.permissions ?? {},
             roles: [],
+            pending_registration_count: 0,
         },
         sidebarOpen: rememberedSidebarState(
             rememberedState?.sidebarOpen ?? true,
@@ -86,10 +95,10 @@ const initialPage: Page<{
     rememberedState: {},
 };
 
-function OfflineDashboard() {
+function OfflineTasks() {
     return (
         <>
-            <Head title="Dashboard" />
+            <Head title="Offline-first Tasks" />
             <div className="flex h-full flex-1 flex-col overflow-x-auto rounded-xl p-4">
                 {userScope ? (
                     <TaskWorkspace userScope={userScope} />
@@ -99,13 +108,14 @@ function OfflineDashboard() {
                             <CardTitle>Offline-first tasks</CardTitle>
                             <CardDescription>
                                 Local task data becomes available after the
-                                first authenticated dashboard visit.
+                                first authenticated Offline-first Tasks visit.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <p className="text-sm text-muted-foreground">
-                                Sign in while online and open the dashboard once
-                                to activate this browser’s offline workspace.
+                                Sign in while online and open Offline-first
+                                Tasks once to activate this browser’s offline
+                                workspace.
                             </p>
                         </CardContent>
                     </Card>
@@ -115,11 +125,11 @@ function OfflineDashboard() {
     );
 }
 
-OfflineDashboard.layout = {
+OfflineTasks.layout = {
     breadcrumbs: [
         {
-            title: 'Dashboard',
-            href: dashboard(),
+            title: 'Offline-first Tasks',
+            href: tasks(),
         },
     ],
 };
@@ -180,7 +190,9 @@ createRoot(rootElement).render(
             initialComponent={
                 (isProjectsPage
                     ? OfflineProjects
-                    : OfflineDashboard) as unknown as ResolvedComponent
+                    : isTasksPage
+                      ? OfflineTasks
+                      : Dashboard) as unknown as ResolvedComponent
             }
             resolveComponent={resolveComponent}
             titleCallback={(title) =>
