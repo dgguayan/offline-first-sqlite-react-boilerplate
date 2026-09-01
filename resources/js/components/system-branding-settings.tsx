@@ -446,10 +446,10 @@ export function SystemBrandingSettings({ branding }: { branding: Branding }) {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Sidebar logo size</CardTitle>
+                        <CardTitle>Brand logo size</CardTitle>
                         <CardDescription>
-                            Resize the logo in the expanded sidebar without
-                            changing its size in other branding areas.
+                            Use one display size for the expanded sidebar and
+                            login screen.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -500,7 +500,7 @@ export function SystemBrandingSettings({ branding }: { branding: Branding }) {
                             value={form.data.sidebar_logo_size}
                             disabled={form.processing}
                             className="h-8 cursor-pointer px-0 shadow-none"
-                            aria-label="Sidebar logo size slider"
+                            aria-label="Brand logo size slider"
                             aria-describedby="sidebar-logo-size-help sidebar-logo-size-error"
                             onChange={(event) =>
                                 setSidebarLogoSize(Number(event.target.value))
@@ -512,9 +512,7 @@ export function SystemBrandingSettings({ branding }: { branding: Branding }) {
                         >
                             <span>{minimumSidebarLogoSize} px</span>
                             <span>Default: {defaultSidebarLogoSize} px</span>
-                            <span>
-                                Sidebar cap: {maximumSidebarLogoSize} px
-                            </span>
+                            <span>Maximum: {maximumSidebarLogoSize} px</span>
                         </div>
                         <InputError
                             id="sidebar-logo-size-error"
@@ -524,9 +522,9 @@ export function SystemBrandingSettings({ branding }: { branding: Branding }) {
                             }
                         />
                         <p className="text-xs text-muted-foreground">
-                            The logo stops at the sidebar’s usable edge and
-                            automatically returns to {defaultSidebarLogoSize} px
-                            when collapsed.
+                            The logo stops at each container’s usable edge. In
+                            the collapsed sidebar, it automatically returns to{' '}
+                            {defaultSidebarLogoSize} px.
                         </p>
                     </CardContent>
                 </Card>
@@ -820,7 +818,7 @@ export function SystemBrandingSettings({ branding }: { branding: Branding }) {
                                     This removes the custom logo and restores “
                                     {branding.defaultSystemName}” with the
                                     horizontal, left-aligned layout and a{' '}
-                                    {defaultSidebarLogoSize} px sidebar logo.
+                                    {defaultSidebarLogoSize} px brand logo.
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

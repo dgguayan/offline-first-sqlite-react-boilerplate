@@ -1,6 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import AppLogoIcon from '@/components/app-logo-icon';
-import { clampSidebarLogoSize } from '@/lib/branding';
+import { resolveBrandingLogoSize } from '@/lib/branding';
+import type { BrandingLogoSizeMode } from '@/lib/branding';
 import { cn } from '@/lib/utils';
 import type { Branding } from '@/types';
 
@@ -8,11 +9,13 @@ export default function AppLogo({
     branding: brandingOverride,
     preview = false,
     sidebar = false,
+    useConfiguredLogoSize = false,
     className,
 }: {
     branding?: Branding;
     preview?: boolean;
     sidebar?: boolean;
+    useConfiguredLogoSize?: boolean;
     className?: string;
 }) {
     const { branding: sharedBranding } = usePage().props;
@@ -23,10 +26,18 @@ export default function AppLogo({
     const customLogoUrl = branding.usesCustomLogo ? branding.logoUrl : null;
     const titleAlignment = branding.titleAlignment ?? 'left';
     const titleOverflow = branding.titleOverflow ?? 'ellipsis';
-    const sidebarLogoSize = clampSidebarLogoSize(branding.sidebarLogoSize);
-    const logoSize = sidebar ? sidebarLogoSize : preview ? 40 : 32;
+    const hasResponsiveLogoSize = sidebar || useConfiguredLogoSize;
+    const logoSizeMode: BrandingLogoSizeMode = hasResponsiveLogoSize
+        ? 'configured'
+        : preview
+          ? 'preview'
+          : 'default';
+    const logoSize = resolveBrandingLogoSize(
+        branding.sidebarLogoSize,
+        logoSizeMode,
+    );
     const defaultIconSize = Math.round(logoSize * 0.625);
-    const sidebarWidthCap =
+    const logoWidthCap =
         isVertical || !showTitle ? '100%' : 'calc(100% - 0.5rem)';
 
     return (
@@ -41,15 +52,15 @@ export default function AppLogo({
                 <div
                     className={cn(
                         'flex shrink-0 items-center justify-center overflow-hidden rounded-md',
-                        sidebar && 'aspect-square max-w-full',
+                        hasResponsiveLogoSize && 'aspect-square max-w-full',
                         sidebar && 'group-data-[collapsible=icon]:size-8!',
                         !customLogoUrl &&
                             'bg-sidebar-primary text-sidebar-primary-foreground',
                     )}
                     style={
-                        sidebar
+                        hasResponsiveLogoSize
                             ? {
-                                  width: `min(${sidebarLogoSize}px, ${sidebarWidthCap})`,
+                                  width: `min(${logoSize}px, ${logoWidthCap})`,
                               }
                             : { width: logoSize, height: logoSize }
                     }
@@ -68,8 +79,12 @@ export default function AppLogo({
                                     'group-data-[collapsible=icon]:size-5!',
                             )}
                             style={{
-                                width: sidebar ? '62.5%' : defaultIconSize,
-                                height: sidebar ? '62.5%' : defaultIconSize,
+                                width: hasResponsiveLogoSize
+                                    ? '62.5%'
+                                    : defaultIconSize,
+                                height: hasResponsiveLogoSize
+                                    ? '62.5%'
+                                    : defaultIconSize,
                             }}
                         />
                     )}

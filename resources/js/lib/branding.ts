@@ -4,6 +4,8 @@ import {
     minimumSidebarLogoSize,
 } from '@/types';
 
+export type BrandingLogoSizeMode = 'default' | 'preview' | 'configured';
+
 export function clampSidebarLogoSize(
     value: number,
     fallback = defaultSidebarLogoSize,
@@ -34,4 +36,15 @@ export function parseSidebarLogoSizeInput(value: string): number | null {
     }
 
     return parsedValue;
+}
+
+export function resolveBrandingLogoSize(
+    value: number,
+    mode: BrandingLogoSizeMode,
+): number {
+    if (mode === 'configured') {
+        return clampSidebarLogoSize(value);
+    }
+
+    return mode === 'preview' ? 40 : defaultSidebarLogoSize;
 }

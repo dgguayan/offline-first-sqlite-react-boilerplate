@@ -23,13 +23,18 @@ export default function AuthLoginLayout({
                             <div className="mx-auto w-full max-w-sm">
                                 <Link
                                     href={home()}
-                                    className="mx-auto mb-8 flex w-full max-w-52 justify-center rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none md:hidden"
+                                    className="mx-auto mb-8 flex w-full max-w-sm justify-center rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none md:hidden"
                                 >
-                                    <AppLogo preview />
+                                    <AppLogo useConfiguredLogoSize />
                                     <span className="sr-only">Go to home</span>
                                 </Link>
 
-                                <div className="mb-7 space-y-2 text-center">
+                                <div
+                                    className="mb-7 space-y-2"
+                                    style={{
+                                        textAlign: branding.titleAlignment,
+                                    }}
+                                >
                                     <h1 className="text-2xl font-bold tracking-tight">
                                         {title}
                                     </h1>
@@ -53,8 +58,8 @@ export default function AuthLoginLayout({
                                 className="relative z-10 flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border bg-card/90 p-7 shadow-sm backdrop-blur-sm transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
                             >
                                 <AppLogo
-                                    preview
-                                    className="max-w-60 justify-center"
+                                    useConfiguredLogoSize
+                                    className="max-w-xs justify-center"
                                 />
                                 <p className="text-center text-sm text-muted-foreground">
                                     Secure access for approved accounts.

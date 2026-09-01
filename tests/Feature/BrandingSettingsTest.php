@@ -32,6 +32,35 @@ test('appearance shares branding and its management permission with the administ
             ->where('auth.permissions', fn (Collection $permissions): bool => $permissions->get('settings.manage-branding') === 'all'));
 });
 
+test('the guest login screen receives the saved branding adjustments', function () {
+    $this->actingAs($this->administrator)
+        ->post(route('branding.update'), [
+            'system_name' => 'Configured Login',
+            'layout' => BrandingSetting::Vertical,
+            'title_alignment' => BrandingSetting::AlignCenter,
+            'title_overflow' => BrandingSetting::OverflowWrap,
+            'sidebar_logo_size' => 127,
+            'remove_logo' => false,
+            'logo' => UploadedFile::fake()->image('login-logo.png', 127, 127),
+        ])
+        ->assertSessionHasNoErrors();
+
+    $logoPath = $this->branding->refresh()->logo_path;
+    $this->post(route('logout'))->assertRedirect();
+
+    $this->get(route('login'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('auth/login')
+            ->where('branding.systemName', 'Configured Login')
+            ->where('branding.logoUrl', fn (string $logoUrl): bool => str_starts_with($logoUrl, "/storage/{$logoPath}?v="))
+            ->where('branding.layout', BrandingSetting::Vertical)
+            ->where('branding.titleAlignment', BrandingSetting::AlignCenter)
+            ->where('branding.titleOverflow', BrandingSetting::OverflowWrap)
+            ->where('branding.sidebarLogoSize', 127)
+            ->where('branding.usesCustomLogo', true));
+});
+
 test('an administrator can update the system name and branding layout', function () {
     $this->actingAs($this->administrator)
         ->from(route('appearance.edit'))
