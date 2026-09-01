@@ -63,7 +63,7 @@ export default function AppLogo({
                     ) : (
                         <AppLogoIcon
                             className={cn(
-                                'fill-current text-white dark:text-black',
+                                'fill-current text-sidebar-primary-foreground',
                                 sidebar &&
                                     'group-data-[collapsible=icon]:size-5!',
                             )}

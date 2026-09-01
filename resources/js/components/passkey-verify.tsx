@@ -6,6 +6,7 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 
 type Props = {
     routes?: {
@@ -15,6 +16,8 @@ type Props = {
     label?: string;
     loadingLabel?: string;
     separator?: string;
+    separatorClassName?: string;
+    separatorPosition?: 'before' | 'after';
 };
 
 export default function PasskeyVerify({
@@ -22,6 +25,8 @@ export default function PasskeyVerify({
     label,
     loadingLabel,
     separator,
+    separatorClassName,
+    separatorPosition = 'after',
 }: Props = {}) {
     const { verify, isLoading, error, isSupported } = usePasskeyVerify({
         ...(routes && {
@@ -39,8 +44,28 @@ export default function PasskeyVerify({
         return null;
     }
 
+    const separatorElement = (
+        <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+                <Separator className="w-full" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+                <span
+                    className={cn(
+                        'bg-background px-2 text-muted-foreground',
+                        separatorClassName,
+                    )}
+                >
+                    {separator ?? 'Or continue with email'}
+                </span>
+            </div>
+        </div>
+    );
+
     return (
         <>
+            {separatorPosition === 'before' && separatorElement}
+
             <div className="grid gap-2">
                 <Button
                     type="button"
@@ -59,16 +84,7 @@ export default function PasskeyVerify({
                 )}
             </div>
 
-            <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                    <Separator className="w-full" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-background px-2 text-muted-foreground">
-                        {separator ?? 'Or continue with email'}
-                    </span>
-                </div>
-            </div>
+            {separatorPosition === 'after' && separatorElement}
         </>
     );
 }
