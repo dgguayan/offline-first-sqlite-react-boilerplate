@@ -7,10 +7,12 @@ import {
     RotateCcw,
     Search,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
 import { ConfirmActionDialog } from '@/components/admin/confirm-action-dialog';
 import { Pagination } from '@/components/admin/pagination';
+import { DataTable } from '@/components/data-table';
+import type { DataTableColumnDef } from '@/components/data-table-features';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -76,34 +78,177 @@ export default function WorkspaceData({ records, counts, filters }: Props) {
         visit({ ...values, type });
     };
 
-    const changeArchiveState = (
-        record: WorkspaceRecord,
-        action: 'archive' | 'restore',
-    ): void => {
-        const key = `${action}:${record.id}`;
-        const destination =
-            action === 'archive'
-                ? archiveWorkspaceRecord({
-                      type: values.type,
-                      id: record.id,
-                  })
-                : restoreWorkspaceRecord({
-                      type: values.type,
-                      id: record.id,
-                  });
+    const changeArchiveState = useCallback(
+        (record: WorkspaceRecord, action: 'archive' | 'restore'): void => {
+            const key = `${action}:${record.id}`;
+            const destination =
+                action === 'archive'
+                    ? archiveWorkspaceRecord({
+                          type: values.type,
+                          id: record.id,
+                      })
+                    : restoreWorkspaceRecord({
+                          type: values.type,
+                          id: record.id,
+                      });
 
-        setProcessingKey(key);
-        router.patch(
-            destination,
-            {},
-            {
-                preserveScroll: true,
-                onFinish: () => setProcessingKey(null),
-            },
-        );
-    };
+            setProcessingKey(key);
+            router.patch(
+                destination,
+                {},
+                {
+                    preserveScroll: true,
+                    onFinish: () => setProcessingKey(null),
+                },
+            );
+        },
+        [values.type],
+    );
 
     const entityLabel = values.type === 'tasks' ? 'task' : 'project';
+    const columns = useMemo<Array<DataTableColumnDef<WorkspaceRecord>>>(
+        () => [
+            {
+                accessorKey: 'title',
+                header: 'Title',
+                cell: ({ row }) => (
+                    <div className="min-w-64">
+                        <div className="font-medium break-words">
+                            {row.original.title}
+                        </div>
+                        <code className="text-xs text-muted-foreground">
+                            {row.original.id}
+                        </code>
+                    </div>
+                ),
+            },
+            {
+                id: 'owner',
+                header: 'Owner',
+                cell: ({ row }) => (
+                    <div>
+                        <div className="font-medium whitespace-nowrap">
+                            {row.original.owner_name}
+                        </div>
+                        <div className="text-xs whitespace-nowrap text-muted-foreground">
+                            {row.original.owner_email}
+                        </div>
+                    </div>
+                ),
+                enableGlobalFilter: false,
+            },
+            {
+                id: 'status',
+                header: 'Status',
+                cell: ({ row }) => <RecordStatus record={row.original} />,
+                enableGlobalFilter: false,
+            },
+            {
+                accessorKey: 'version',
+                header: 'Version',
+                cell: ({ row }) => (
+                    <span className="text-muted-foreground">
+                        {row.original.version}
+                    </span>
+                ),
+            },
+            {
+                accessorKey: 'created_at',
+                header: 'Created',
+                cell: ({ row }) => (
+                    <span className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(row.original.created_at)}
+                    </span>
+                ),
+            },
+            {
+                accessorKey: 'updated_at',
+                header: 'Updated',
+                cell: ({ row }) => (
+                    <span className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(row.original.updated_at)}
+                    </span>
+                ),
+            },
+            ...(canManageArchive
+                ? [
+                      {
+                          id: 'actions',
+                          header: () => (
+                              <span className="sr-only">Actions</span>
+                          ),
+                          cell: ({ row }) => (
+                              <div className="text-right">
+                                  {!row.original.archived_at && canArchive && (
+                                      <ConfirmActionDialog
+                                          trigger={
+                                              <Button
+                                                  type="button"
+                                                  size="sm"
+                                                  variant="outline"
+                                              >
+                                                  <Archive /> Archive
+                                              </Button>
+                                          }
+                                          title={`Archive this ${entityLabel}?`}
+                                          description={`"${row.original.title}" belongs to ${row.original.owner_name}. It will be hidden from the owner's workspace during synchronization and can be restored later.`}
+                                          confirmLabel={`Archive ${entityLabel}`}
+                                          processing={
+                                              processingKey ===
+                                              `archive:${row.original.id}`
+                                          }
+                                          onConfirm={() =>
+                                              changeArchiveState(
+                                                  row.original,
+                                                  'archive',
+                                              )
+                                          }
+                                      />
+                                  )}
+                                  {row.original.archived_at && canRestore && (
+                                      <ConfirmActionDialog
+                                          trigger={
+                                              <Button
+                                                  type="button"
+                                                  size="sm"
+                                                  variant="outline"
+                                              >
+                                                  <RotateCcw /> Restore
+                                              </Button>
+                                          }
+                                          title={`Restore this ${entityLabel}?`}
+                                          description={`"${row.original.title}" will return to ${row.original.owner_name}'s workspace during the next synchronization.`}
+                                          confirmLabel={`Restore ${entityLabel}`}
+                                          processing={
+                                              processingKey ===
+                                              `restore:${row.original.id}`
+                                          }
+                                          onConfirm={() =>
+                                              changeArchiveState(
+                                                  row.original,
+                                                  'restore',
+                                              )
+                                          }
+                                      />
+                                  )}
+                              </div>
+                          ),
+                          enableGlobalFilter: false,
+                          enableHiding: false,
+                          enableSorting: false,
+                      } satisfies DataTableColumnDef<WorkspaceRecord>,
+                  ]
+                : []),
+        ],
+        [
+            canArchive,
+            canManageArchive,
+            canRestore,
+            changeArchiveState,
+            entityLabel,
+            processingKey,
+        ],
+    );
 
     return (
         <>
@@ -210,135 +355,28 @@ export default function WorkspaceData({ records, counts, filters }: Props) {
                         <Button variant="secondary">Apply</Button>
                     </form>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/50 text-left text-xs tracking-wide text-muted-foreground uppercase">
-                                <tr>
-                                    <th className="px-4 py-3">Title</th>
-                                    <th className="px-4 py-3">Owner</th>
-                                    <th className="px-4 py-3">Status</th>
-                                    <th className="px-4 py-3">Version</th>
-                                    <th className="px-4 py-3">Created</th>
-                                    <th className="px-4 py-3">Updated</th>
-                                    {canManageArchive && (
-                                        <th className="px-4 py-3 text-right">
-                                            Action
-                                        </th>
-                                    )}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {records.data.map((record) => (
-                                    <tr
-                                        key={record.id}
-                                        className="align-top hover:bg-muted/30"
-                                    >
-                                        <td className="min-w-64 px-4 py-4">
-                                            <div className="font-medium break-words">
-                                                {record.title}
-                                            </div>
-                                            <code className="text-xs text-muted-foreground">
-                                                {record.id}
-                                            </code>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <div className="font-medium whitespace-nowrap">
-                                                {record.owner_name}
-                                            </div>
-                                            <div className="text-xs whitespace-nowrap text-muted-foreground">
-                                                {record.owner_email}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <RecordStatus record={record} />
-                                        </td>
-                                        <td className="px-4 py-4 text-muted-foreground">
-                                            {record.version}
-                                        </td>
-                                        <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">
-                                            {formatDate(record.created_at)}
-                                        </td>
-                                        <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">
-                                            {formatDate(record.updated_at)}
-                                        </td>
-                                        {canManageArchive && (
-                                            <td className="px-4 py-4 text-right">
-                                                {!record.archived_at &&
-                                                    canArchive && (
-                                                        <ConfirmActionDialog
-                                                            trigger={
-                                                                <Button
-                                                                    type="button"
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                >
-                                                                    <Archive />{' '}
-                                                                    Archive
-                                                                </Button>
-                                                            }
-                                                            title={`Archive this ${entityLabel}?`}
-                                                            description={`"${record.title}" belongs to ${record.owner_name}. It will be hidden from the owner's workspace during synchronization and can be restored later.`}
-                                                            confirmLabel={`Archive ${entityLabel}`}
-                                                            processing={
-                                                                processingKey ===
-                                                                `archive:${record.id}`
-                                                            }
-                                                            onConfirm={() =>
-                                                                changeArchiveState(
-                                                                    record,
-                                                                    'archive',
-                                                                )
-                                                            }
-                                                        />
-                                                    )}
-                                                {record.archived_at &&
-                                                    canRestore && (
-                                                        <ConfirmActionDialog
-                                                            trigger={
-                                                                <Button
-                                                                    type="button"
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                >
-                                                                    <RotateCcw />{' '}
-                                                                    Restore
-                                                                </Button>
-                                                            }
-                                                            title={`Restore this ${entityLabel}?`}
-                                                            description={`"${record.title}" will return to ${record.owner_name}'s workspace during the next synchronization.`}
-                                                            confirmLabel={`Restore ${entityLabel}`}
-                                                            processing={
-                                                                processingKey ===
-                                                                `restore:${record.id}`
-                                                            }
-                                                            onConfirm={() =>
-                                                                changeArchiveState(
-                                                                    record,
-                                                                    'restore',
-                                                                )
-                                                            }
-                                                        />
-                                                    )}
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {records.data.length === 0 && (
-                        <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-                            <Database className="size-8 text-muted-foreground" />
-                            <p className="font-medium">
-                                No {values.type} found
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                                No {entityLabel} records match the current
-                                search and filters.
-                            </p>
-                        </div>
-                    )}
+                    <DataTable
+                        columns={columns}
+                        data={records.data}
+                        processingMode="server"
+                        showSearch={false}
+                        showColumnVisibility={false}
+                        showPagination={false}
+                        showSelectionSummary={false}
+                        tableContainerClassName="rounded-none border-x-0 border-t-0"
+                        emptyState={
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <Database className="size-8 text-muted-foreground" />
+                                <p className="font-medium">
+                                    No {values.type} found
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    No {entityLabel} records match the current
+                                    search and filters.
+                                </p>
+                            </div>
+                        }
+                    />
 
                     <Pagination
                         links={records.links}

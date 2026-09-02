@@ -17,6 +17,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import {
     activate,
     deactivate,
     destroy,
@@ -455,42 +463,42 @@ export default function ShowUser({
                     <CardContent>
                         {permissionSources.length > 0 ? (
                             <div className="overflow-x-auto rounded-lg border">
-                                <table className="w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-4 py-3">
+                                <Table>
+                                    <TableHeader className="bg-muted/50 text-left">
+                                        <TableRow>
+                                            <TableHead className="px-4 py-3">
                                                 Permission
-                                            </th>
-                                            <th className="px-4 py-3">
+                                            </TableHead>
+                                            <TableHead className="px-4 py-3">
                                                 Inherited from
-                                            </th>
-                                            <th className="px-4 py-3">
+                                            </TableHead>
+                                            <TableHead className="px-4 py-3">
                                                 Data scope
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
+                                            </TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
                                         {permissionSources.map(
                                             (source, index) => (
-                                                <tr
+                                                <TableRow
                                                     key={`${source.role}-${source.permission}-${index}`}
                                                 >
-                                                    <td className="px-4 py-3 font-mono text-xs">
+                                                    <TableCell className="px-4 py-3 font-mono text-xs">
                                                         {source.permission}
-                                                    </td>
-                                                    <td className="px-4 py-3">
+                                                    </TableCell>
+                                                    <TableCell className="px-4 py-3">
                                                         {source.role}
-                                                    </td>
-                                                    <td className="px-4 py-3">
+                                                    </TableCell>
+                                                    <TableCell className="px-4 py-3">
                                                         <Badge variant="outline">
                                                             {source.scope}
                                                         </Badge>
-                                                    </td>
-                                                </tr>
+                                                    </TableCell>
+                                                </TableRow>
                                             ),
                                         )}
-                                    </tbody>
-                                </table>
+                                    </TableBody>
+                                </Table>
                             </div>
                         ) : (
                             <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">

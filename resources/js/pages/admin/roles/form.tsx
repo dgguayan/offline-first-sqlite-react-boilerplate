@@ -17,6 +17,14 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
 import { destroy, index, store, update } from '@/routes/admin/roles';
 import type { Auth, PermissionModule, PermissionScope } from '@/types';
 
@@ -377,24 +385,24 @@ export default function RoleForm({
                                             )}
                                         </div>
                                         <div className="overflow-x-auto">
-                                            <table className="w-full text-sm">
-                                                <thead className="border-y bg-muted/20 text-left text-xs text-muted-foreground uppercase">
-                                                    <tr>
-                                                        <th className="px-4 py-2">
+                                            <Table>
+                                                <TableHeader className="border-y bg-muted/20 text-left text-xs text-muted-foreground uppercase">
+                                                    <TableRow>
+                                                        <TableHead className="px-4 py-2">
                                                             Allow
-                                                        </th>
-                                                        <th className="px-4 py-2">
+                                                        </TableHead>
+                                                        <TableHead className="px-4 py-2">
                                                             Action
-                                                        </th>
-                                                        <th className="px-4 py-2">
+                                                        </TableHead>
+                                                        <TableHead className="px-4 py-2">
                                                             Permission key
-                                                        </th>
-                                                        <th className="px-4 py-2">
+                                                        </TableHead>
+                                                        <TableHead className="px-4 py-2">
                                                             Data scope
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y">
+                                                        </TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
                                                     {module.permissions.map(
                                                         (permission) => {
                                                             const grant =
@@ -407,12 +415,12 @@ export default function RoleForm({
                                                                 );
 
                                                             return (
-                                                                <tr
+                                                                <TableRow
                                                                     key={
                                                                         permission.id
                                                                     }
                                                                 >
-                                                                    <td className="px-4 py-3">
+                                                                    <TableCell className="px-4 py-3">
                                                                         <Checkbox
                                                                             checked={Boolean(
                                                                                 grant,
@@ -431,8 +439,8 @@ export default function RoleForm({
                                                                             }
                                                                             aria-label={`Grant ${permission.name}`}
                                                                         />
-                                                                    </td>
-                                                                    <td className="px-4 py-3">
+                                                                    </TableCell>
+                                                                    <TableCell className="px-4 py-3">
                                                                         <div className="font-medium">
                                                                             {
                                                                                 permission.name
@@ -445,15 +453,15 @@ export default function RoleForm({
                                                                                 }
                                                                             </p>
                                                                         )}
-                                                                    </td>
-                                                                    <td className="px-4 py-3">
+                                                                    </TableCell>
+                                                                    <TableCell className="px-4 py-3">
                                                                         <code className="rounded bg-muted px-1.5 py-1 text-xs">
                                                                             {
                                                                                 permission.slug
                                                                             }
                                                                         </code>
-                                                                    </td>
-                                                                    <td className="px-4 py-3">
+                                                                    </TableCell>
+                                                                    <TableCell className="px-4 py-3">
                                                                         {grant ? (
                                                                             <select
                                                                                 value={
@@ -504,13 +512,13 @@ export default function RoleForm({
                                                                                 granted
                                                                             </span>
                                                                         )}
-                                                                    </td>
-                                                                </tr>
+                                                                    </TableCell>
+                                                                </TableRow>
                                                             );
                                                         },
                                                     )}
-                                                </tbody>
-                                            </table>
+                                                </TableBody>
+                                            </Table>
                                         </div>
                                     </div>
                                 );

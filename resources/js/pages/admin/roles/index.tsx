@@ -1,8 +1,10 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Plus, Search, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
 import { Pagination } from '@/components/admin/pagination';
+import { DataTable } from '@/components/data-table';
+import type { DataTableColumnDef } from '@/components/data-table-features';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,6 +21,70 @@ export default function RolesIndex({
 }) {
     const { auth } = usePage<{ auth: Auth }>().props;
     const [search, setSearch] = useState(filters.search ?? '');
+    const canEditRoles = 'roles.edit' in auth.permissions;
+    const columns = useMemo<Array<DataTableColumnDef<RoleSummary>>>(
+        () => [
+            {
+                accessorKey: 'name',
+                header: 'Role',
+                cell: ({ row }) => (
+                    <div>
+                        <div className="flex items-center gap-2 font-medium">
+                            {row.original.name}
+                            {row.original.is_default && (
+                                <Badge variant="outline">Default</Badge>
+                            )}
+                        </div>
+                        <code className="text-xs text-muted-foreground">
+                            {row.original.slug}
+                        </code>
+                    </div>
+                ),
+            },
+            {
+                accessorKey: 'is_active',
+                header: 'Status',
+                cell: ({ row }) => (
+                    <Badge
+                        variant={
+                            row.original.is_active ? 'secondary' : 'destructive'
+                        }
+                    >
+                        {row.original.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                ),
+            },
+            {
+                accessorKey: 'users_count',
+                header: 'Users',
+                cell: ({ row }) => row.original.users_count ?? 0,
+            },
+            {
+                accessorKey: 'permissions_count',
+                header: 'Permissions',
+                cell: ({ row }) => row.original.permissions_count ?? 0,
+            },
+            {
+                id: 'actions',
+                header: () => <span className="sr-only">Actions</span>,
+                cell: ({ row }) => (
+                    <div className="text-right">
+                        {canEditRoles && (
+                            <Button asChild size="sm" variant="outline">
+                                <Link href={edit(row.original.id)}>
+                                    Configure
+                                </Link>
+                            </Button>
+                        )}
+                    </div>
+                ),
+                enableGlobalFilter: false,
+                enableHiding: false,
+                enableSorting: false,
+            },
+        ],
+        [canEditRoles],
+    );
 
     return (
         <>
@@ -62,85 +128,25 @@ export default function RolesIndex({
                         </div>
                         <Button variant="secondary">Search</Button>
                     </form>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/50 text-left text-xs tracking-wide text-muted-foreground uppercase">
-                                <tr>
-                                    <th className="px-4 py-3">Role</th>
-                                    <th className="px-4 py-3">Status</th>
-                                    <th className="px-4 py-3">Users</th>
-                                    <th className="px-4 py-3">Permissions</th>
-                                    <th className="px-4 py-3 text-right">
-                                        Action
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {roles.data.map((role) => (
-                                    <tr
-                                        key={role.id}
-                                        className="hover:bg-muted/30"
-                                    >
-                                        <td className="px-4 py-4">
-                                            <div className="flex items-center gap-2 font-medium">
-                                                {role.name}
-                                                {role.is_default && (
-                                                    <Badge variant="outline">
-                                                        Default
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            <code className="text-xs text-muted-foreground">
-                                                {role.slug}
-                                            </code>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <Badge
-                                                variant={
-                                                    role.is_active
-                                                        ? 'secondary'
-                                                        : 'destructive'
-                                                }
-                                            >
-                                                {role.is_active
-                                                    ? 'Active'
-                                                    : 'Inactive'}
-                                            </Badge>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            {role.users_count ?? 0}
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            {role.permissions_count ?? 0}
-                                        </td>
-                                        <td className="px-4 py-4 text-right">
-                                            {'roles.edit' in
-                                                auth.permissions && (
-                                                <Button
-                                                    asChild
-                                                    size="sm"
-                                                    variant="outline"
-                                                >
-                                                    <Link href={edit(role.id)}>
-                                                        Configure
-                                                    </Link>
-                                                </Button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {roles.data.length === 0 && (
-                        <div className="flex flex-col items-center gap-2 p-16 text-center">
-                            <ShieldCheck className="size-8 text-muted-foreground" />
-                            <p className="font-medium">No roles found</p>
-                            <p className="text-sm text-muted-foreground">
-                                Create a role or change your search.
-                            </p>
-                        </div>
-                    )}
+                    <DataTable
+                        columns={columns}
+                        data={roles.data}
+                        processingMode="server"
+                        showSearch={false}
+                        showColumnVisibility={false}
+                        showPagination={false}
+                        showSelectionSummary={false}
+                        tableContainerClassName="rounded-none border-x-0 border-t-0"
+                        emptyState={
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <ShieldCheck className="size-8 text-muted-foreground" />
+                                <p className="font-medium">No roles found</p>
+                                <p className="text-sm text-muted-foreground">
+                                    Create a role or change your search.
+                                </p>
+                            </div>
+                        }
+                    />
                     <Pagination
                         links={roles.links}
                         from={roles.from}

@@ -8,11 +8,13 @@ import {
     UserRoundSearch,
     UserX,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
 import { ConfirmActionDialog } from '@/components/admin/confirm-action-dialog';
 import { Pagination } from '@/components/admin/pagination';
 import AlertError from '@/components/alert-error';
+import { DataTable } from '@/components/data-table';
+import type { DataTableColumnDef } from '@/components/data-table-features';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -98,7 +100,10 @@ export default function RegistrationVerification({
     const expirationForm = useForm({
         pending_expiration_days: settings.pending_expiration_days,
     });
-    const registrationRows = registrations.data.map(normalizeRegistration);
+    const registrationRows = useMemo(
+        () => registrations.data.map(normalizeRegistration),
+        [registrations.data],
+    );
 
     const visit = (view: RegistrationView, nextSearch = search) => {
         router.get(
@@ -108,7 +113,7 @@ export default function RegistrationVerification({
         );
     };
 
-    const approveRegistration = (registration: RegistrationRow) => {
+    const approveRegistration = useCallback((registration: RegistrationRow) => {
         setProcessingUserId(registration.user_id);
         router.patch(
             approve(Number(registration.user_id)),
@@ -118,7 +123,7 @@ export default function RegistrationVerification({
                 onFinish: () => setProcessingUserId(null),
             },
         );
-    };
+    }, []);
 
     const submitDecline = () => {
         if (declining === null) {
@@ -133,6 +138,136 @@ export default function RegistrationVerification({
             },
         });
     };
+
+    const columns = useMemo<Array<DataTableColumnDef<RegistrationRow>>>(
+        () => [
+            {
+                accessorKey: 'name',
+                header: 'Applicant',
+                cell: ({ row }) => (
+                    <div className="min-w-64">
+                        <div className="font-medium">{row.original.name}</div>
+                        <div className="text-muted-foreground">
+                            {row.original.email}
+                        </div>
+                        {row.original.username && (
+                            <div className="text-xs text-muted-foreground">
+                                @{row.original.username}
+                            </div>
+                        )}
+                    </div>
+                ),
+            },
+            {
+                accessorKey: 'status',
+                header: 'Status',
+                cell: ({ row }) => (
+                    <RegistrationStatus registration={row.original} />
+                ),
+            },
+            {
+                accessorKey: 'registered_at',
+                header: 'Registered',
+                cell: ({ row }) => (
+                    <span className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(row.original.registered_at)}
+                    </span>
+                ),
+            },
+            {
+                id: 'deadline_resolution',
+                header: 'Deadline / resolution',
+                cell: ({ row }) => {
+                    const registration = row.original;
+
+                    return registration.status === 'pending' ? (
+                        <div>
+                            <div className="whitespace-nowrap">
+                                {formatDate(
+                                    registration.verification_expires_at,
+                                )}
+                            </div>
+                            <div
+                                className={
+                                    registration.is_approaching_expiration
+                                        ? 'text-xs font-medium text-amber-700 dark:text-amber-400'
+                                        : 'text-xs text-muted-foreground'
+                                }
+                            >
+                                {formatRemaining(
+                                    registration.remaining_seconds,
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div>
+                            <div className="whitespace-nowrap text-muted-foreground">
+                                {formatDate(registration.resolved_at)}
+                            </div>
+                            {registration.decline_reason && (
+                                <div className="max-w-sm text-xs text-muted-foreground">
+                                    {registration.decline_reason}
+                                </div>
+                            )}
+                        </div>
+                    );
+                },
+                enableGlobalFilter: false,
+            },
+            ...(filters.view === 'pending'
+                ? [
+                      {
+                          id: 'actions',
+                          header: () => (
+                              <span className="sr-only">Actions</span>
+                          ),
+                          cell: ({ row }) => (
+                              <div className="flex justify-end gap-2">
+                                  <ConfirmActionDialog
+                                      trigger={
+                                          <Button
+                                              size="sm"
+                                              disabled={
+                                                  processingUserId ===
+                                                  row.original.user_id
+                                              }
+                                          >
+                                              <UserCheck />
+                                              Approve
+                                          </Button>
+                                      }
+                                      title="Approve this registration?"
+                                      description={`${row.original.name} will receive the active default role and can sign in immediately.`}
+                                      confirmLabel="Approve registration"
+                                      processing={
+                                          processingUserId ===
+                                          row.original.user_id
+                                      }
+                                      onConfirm={() =>
+                                          approveRegistration(row.original)
+                                      }
+                                  />
+                                  <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                          declineForm.reset();
+                                          setDeclining(row.original);
+                                      }}
+                                  >
+                                      <UserX /> Decline
+                                  </Button>
+                              </div>
+                          ),
+                          enableGlobalFilter: false,
+                          enableHiding: false,
+                          enableSorting: false,
+                      } satisfies DataTableColumnDef<RegistrationRow>,
+                  ]
+                : []),
+        ],
+        [approveRegistration, declineForm, filters.view, processingUserId],
+    );
 
     return (
         <>
@@ -292,157 +427,28 @@ export default function RegistrationVerification({
                         </form>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/50 text-left text-xs tracking-wide text-muted-foreground uppercase">
-                                <tr>
-                                    <th className="px-4 py-3 font-medium">
-                                        Applicant
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Status
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Registered
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Deadline / resolution
-                                    </th>
-                                    {filters.view === 'pending' && (
-                                        <th className="px-4 py-3 text-right font-medium">
-                                            Actions
-                                        </th>
-                                    )}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {registrationRows.map((registration) => (
-                                    <tr
-                                        key={registration.id}
-                                        className="hover:bg-muted/30"
-                                    >
-                                        <td className="px-4 py-4">
-                                            <div className="font-medium">
-                                                {registration.name}
-                                            </div>
-                                            <div className="text-muted-foreground">
-                                                {registration.email}
-                                            </div>
-                                            {registration.username && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    @{registration.username}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <RegistrationStatus
-                                                registration={registration}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">
-                                            {formatDate(
-                                                registration.registered_at,
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            {registration.status ===
-                                            'pending' ? (
-                                                <div>
-                                                    <div className="whitespace-nowrap">
-                                                        {formatDate(
-                                                            registration.verification_expires_at,
-                                                        )}
-                                                    </div>
-                                                    <div
-                                                        className={
-                                                            registration.is_approaching_expiration
-                                                                ? 'text-xs font-medium text-amber-700 dark:text-amber-400'
-                                                                : 'text-xs text-muted-foreground'
-                                                        }
-                                                    >
-                                                        {formatRemaining(
-                                                            registration.remaining_seconds,
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div>
-                                                    <div className="whitespace-nowrap text-muted-foreground">
-                                                        {formatDate(
-                                                            registration.resolved_at,
-                                                        )}
-                                                    </div>
-                                                    {registration.decline_reason && (
-                                                        <div className="max-w-sm text-xs text-muted-foreground">
-                                                            {
-                                                                registration.decline_reason
-                                                            }
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </td>
-                                        {filters.view === 'pending' && (
-                                            <td className="px-4 py-4 text-right">
-                                                <div className="flex justify-end gap-2">
-                                                    <ConfirmActionDialog
-                                                        trigger={
-                                                            <Button
-                                                                size="sm"
-                                                                disabled={
-                                                                    processingUserId ===
-                                                                    registration.user_id
-                                                                }
-                                                            >
-                                                                <UserCheck />
-                                                                Approve
-                                                            </Button>
-                                                        }
-                                                        title="Approve this registration?"
-                                                        description={`${registration.name} will receive the active default role and can sign in immediately.`}
-                                                        confirmLabel="Approve registration"
-                                                        processing={
-                                                            processingUserId ===
-                                                            registration.user_id
-                                                        }
-                                                        onConfirm={() =>
-                                                            approveRegistration(
-                                                                registration,
-                                                            )
-                                                        }
-                                                    />
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => {
-                                                            declineForm.reset();
-                                                            setDeclining(
-                                                                registration,
-                                                            );
-                                                        }}
-                                                    >
-                                                        <UserX /> Decline
-                                                    </Button>
-                                                </div>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {registrations.data.length === 0 && (
-                        <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-                            <ShieldCheck className="size-8 text-muted-foreground" />
-                            <p className="font-medium">
-                                No {viewLabel(filters.view)} registrations
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                                No records match the current view and search.
-                            </p>
-                        </div>
-                    )}
+                    <DataTable
+                        columns={columns}
+                        data={registrationRows}
+                        processingMode="server"
+                        showSearch={false}
+                        showColumnVisibility={false}
+                        showPagination={false}
+                        showSelectionSummary={false}
+                        tableContainerClassName="rounded-none border-x-0 border-t-0"
+                        emptyState={
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <ShieldCheck className="size-8 text-muted-foreground" />
+                                <p className="font-medium">
+                                    No {viewLabel(filters.view)} registrations
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    No records match the current view and
+                                    search.
+                                </p>
+                            </div>
+                        }
+                    />
 
                     <Pagination
                         links={registrations.links}
